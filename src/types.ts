@@ -47,6 +47,8 @@ export type Scenario = {
   id: string;
   name: string;
   notes?: string;
+  /** Optional H-hour, "HH:MM:SS". When set, T+Xs values also show clock time. */
+  hHour?: string;
   simultaneityToleranceS: number;
   repositionWarningThresholdS: number;
   friendlyShips: FriendlyShip[];
