@@ -18,6 +18,21 @@ export function LeftPanel() {
 
   return (
     <aside className="w-1/3 min-w-[400px] overflow-y-auto border-r border-panelBorder bg-panel">
+      <section className="border-b border-panelBorder p-3">
+        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-textSecondary">
+          Scenario Notes
+        </h3>
+        <textarea
+          value={activeScenario.notes ?? ''}
+          onChange={(e) =>
+            dispatch({ type: 'UPDATE_SCENARIO', id: scenarioId, patch: { notes: e.target.value } })
+          }
+          placeholder="Mission notes, assumptions, intent…"
+          rows={2}
+          className="w-full resize-y rounded border border-panelBorder bg-navy px-2 py-1 text-xs text-textPrimary outline-none focus:border-greenAccent"
+        />
+      </section>
+
       <Section
         title="Friendly Ships"
         onAdd={() => dispatch({ type: 'ADD_FRIENDLY_SHIP', scenarioId })}
