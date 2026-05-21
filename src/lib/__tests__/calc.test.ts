@@ -14,6 +14,7 @@ import {
   computeSaturation,
   solveGroup,
   solveIntercept,
+  solveInverseSaturation,
 } from '../calc';
 
 let nextId = 0;
@@ -467,6 +468,82 @@ describe('TC-27: wrap-around at north', () => {
   it('344° and 16° land in the same north cluster', () => {
     const clusters = clusterBearings([344, 16]);
     expect(clusters).toEqual([{ centerDeg: 0, count: 2 }]);
+  });
+});
+
+// ───────── Inverse solver ─────────
+
+describe('TC-41: capacity is sum of engaging layers, threshold is +1', () => {
+  it('SM-2 ×6 + CIWS ×4 → capacity 10, min salvo 11', () => {
+    const sm2 = layer('SM-2', 6, 30);
+    const ciws = layer('CIWS', 4, 5);
+    const tgt = target('T', 0, 0, [sm2, ciws]);
+    const inv = solveInverseSaturation(tgt);
+    expect(inv.interceptCapacity).toBe(10);
+    expect(inv.minSaturatingSalvo).toBe(11);
+    expect(inv.layerCapacities.map((l) => l.effectiveCapacity)).toEqual([6, 4]);
+  });
+});
+
+describe('TC-42: no defense layers → a single missile saturates', () => {
+  it('capacity 0, min salvo 1', () => {
+    const tgt = target('T', 0, 0, []);
+    const inv = solveInverseSaturation(tgt);
+    expect(inv.interceptCapacity).toBe(0);
+    expect(inv.minSaturatingSalvo).toBe(1);
+  });
+});
+
+describe('TC-43: non-engaging layer (minRange > 0) excluded from capacity', () => {
+  it('SM-2 minRange 5 does not engage at arrival, so only CIWS counts', () => {
+    const sm2 = layer('SM-2', 6, 30, { minRangeNm: 5 });
+    const ciws = layer('CIWS', 4, 5);
+    const tgt = target('T', 0, 0, [sm2, ciws]);
+    const inv = solveInverseSaturation(tgt);
+    expect(inv.layerCapacities[0]).toMatchObject({ engages: false, effectiveCapacity: 0 });
+    expect(inv.layerCapacities[1]).toMatchObject({ engages: true, effectiveCapacity: 4 });
+    expect(inv.interceptCapacity).toBe(4);
+    expect(inv.minSaturatingSalvo).toBe(5);
+  });
+});
+
+describe('TC-44: maxRange irrelevant at arrival (deviation #5) — still engages', () => {
+  it('SM-2 max 80 engages (0 ∈ [-∞, 80]), counts toward capacity', () => {
+    const sm2 = layer('SM-2', 6, 30, { maxRangeNm: 80 });
+    const tgt = target('T', 0, 0, [sm2]);
+    const inv = solveInverseSaturation(tgt);
+    expect(inv.layerCapacities[0].engages).toBe(true);
+    expect(inv.minSaturatingSalvo).toBe(7);
+  });
+});
+
+describe('TC-45: inverse is the exact dual of computeLayerBreakdown', () => {
+  it('minSaturatingSalvo leaks 1 while one fewer leaks 0 (synchronized arrival)', () => {
+    const sm2 = layer('SM-2', 6, 30);
+    const ciws = layer('CIWS', 4, 5);
+    const tgt = target('T', 0, 0, [sm2, ciws]);
+    const m = missile('AShM', 500, 100);
+    const n = solveInverseSaturation(tgt).minSaturatingSalvo; // 11
+
+    // All arrive together (one window everywhere). n saturates, n-1 does not.
+    const atN = computeLayerBreakdown([salvo(m.id, tgt.id, n, 50, 0)], [0], [sm2, ciws]);
+    const atNminus1 = computeLayerBreakdown(
+      [salvo(m.id, tgt.id, n - 1, 50, 0)],
+      [0],
+      [sm2, ciws],
+    );
+    expect(atN[atN.length - 1].leakers).toBe(1);
+    expect(atNminus1[atNminus1.length - 1].leakers).toBe(0);
+  });
+});
+
+describe('TC-46: negative interceptsPerWindow clamps to 0 capacity', () => {
+  it('a malformed layer never lowers the threshold below baseline', () => {
+    const bad = layer('Bad', -3, 10);
+    const tgt = target('T', 0, 0, [bad]);
+    const inv = solveInverseSaturation(tgt);
+    expect(inv.interceptCapacity).toBe(0);
+    expect(inv.minSaturatingSalvo).toBe(1);
   });
 });
 

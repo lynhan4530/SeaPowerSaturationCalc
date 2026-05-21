@@ -3,8 +3,10 @@ import { useScenario } from '../hooks/useScenario';
 import {
   computeSaturation,
   solveGroup,
+  solveInverseSaturation,
   type GroupResult,
   type InterceptResult,
+  type InverseSaturationResult,
   type SaturationResult,
 } from '../lib/calc';
 import {
@@ -166,6 +168,14 @@ function TargetResultSection({
     return computeSaturation(group, salvos, target);
   }, [group, salvos, target]);
 
+  // Inverse solver — depends only on the target's defenses, so it's a planning
+  // figure that's meaningful even before any salvo is assigned.
+  const inverse = useMemo(() => solveInverseSaturation(target), [target]);
+  const plannedIncoming = useMemo(
+    () => salvos.reduce((sum, sv) => sum + sv.count, 0),
+    [salvos],
+  );
+
   return (
     <section className="rounded border border-panelBorder bg-panel">
       <div className="border-b border-panelBorder px-3 py-2">
@@ -177,6 +187,10 @@ function TargetResultSection({
           {target.defenseLayers.length} defense layer
           {target.defenseLayers.length === 1 ? '' : 's'}
         </p>
+      </div>
+
+      <div className="px-3 pt-3">
+        <SaturationThresholdCard inverse={inverse} plannedIncoming={plannedIncoming} />
       </div>
 
       {!group || salvos.length === 0 ? (
@@ -247,6 +261,73 @@ function countBySalvo(
   salvos: SectionProps['ships'][number]['salvos'],
 ): number {
   return salvos.find((s) => s.id === r.salvoId)?.count ?? 0;
+}
+
+function SaturationThresholdCard({
+  inverse,
+  plannedIncoming,
+}: {
+  inverse: InverseSaturationResult;
+  plannedIncoming: number;
+}) {
+  const engaging = inverse.layerCapacities.filter((l) => l.engages);
+  const nonEngaging = inverse.layerCapacities.filter((l) => !l.engages);
+  const meets = plannedIncoming >= inverse.minSaturatingSalvo;
+  const deficit = inverse.minSaturatingSalvo - plannedIncoming;
+
+  return (
+    <div className="rounded border border-skyAccent/30 bg-skyAccent/5 p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <h4 className="text-xs font-bold uppercase tracking-widest text-skyAccent">
+          Saturation threshold
+        </h4>
+        <span className="font-mono text-2xl font-bold leading-none text-textPrimary">
+          {inverse.minSaturatingSalvo}
+        </span>
+      </div>
+      <p className="mt-1 font-mono text-[11px] text-textSecondary">
+        Min synchronized arrivals to land 1 missile on the hull
+      </p>
+
+      <p className="mt-2 font-mono text-[11px] text-textSecondary">
+        Defensive capacity:{' '}
+        <span className="text-textPrimary">{inverse.interceptCapacity}</span>
+        {engaging.length > 0 && (
+          <>
+            {' '}
+            ({engaging.map((l) => `${l.layerName} ×${l.effectiveCapacity}`).join(' + ')})
+          </>
+        )}
+      </p>
+      {nonEngaging.length > 0 && (
+        <p className="mt-1 font-mono text-[10px] italic text-textSecondary/70">
+          Out of envelope at arrival, excluded:{' '}
+          {nonEngaging.map((l) => l.layerName).join(', ')}
+        </p>
+      )}
+
+      {plannedIncoming > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[11px]">
+          <span className="text-textSecondary">Planned</span>
+          <span className="text-textPrimary">
+            {plannedIncoming} / {inverse.minSaturatingSalvo}
+          </span>
+          {meets ? (
+            <span className="rounded-sm border border-redAccent/40 bg-redAccent/10 px-2 py-0.5 text-[10px] uppercase tracking-widest text-redAccent">
+              Saturates
+              {plannedIncoming > inverse.minSaturatingSalvo
+                ? ` (+${plannedIncoming - inverse.minSaturatingSalvo})`
+                : ''}
+            </span>
+          ) : (
+            <span className="rounded-sm border border-amberAccent/40 bg-amberAccent/10 px-2 py-0.5 text-[10px] uppercase tracking-widest text-amberAccent">
+              Need {deficit} more
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 type SolutionBlockProps = {
