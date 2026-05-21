@@ -29,7 +29,7 @@ export function CompassInput({ value, onChange, size = 56, label }: Props) {
         value={normalized}
         onChange={(e) => onChange(clamp(Number(e.target.value)))}
         aria-label={label ?? 'Bearing'}
-        className="w-16 rounded border border-panelBorder bg-navy px-2 py-1 text-right text-sm text-textPrimary outline-none focus:border-greenAccent"
+        className="w-16 rounded border border-panelBorder bg-navy px-2 py-1 text-right font-mono text-sm text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
       />
       <span className="text-xs text-textSecondary">&deg;</span>
       <svg
@@ -42,20 +42,20 @@ export function CompassInput({ value, onChange, size = 56, label }: Props) {
           cx={cx}
           cy={cy}
           r={r}
-          fill="#0A0F1E"
-          stroke="#1F2937"
+          fill="#070C14"
+          stroke="#1E2E4A"
           strokeWidth={1}
         />
-        <text x={cx} y={labelFont + 1} textAnchor="middle" fontSize={labelFont} fill="#9CA3AF">
+        <text x={cx} y={labelFont + 1} textAnchor="middle" fontSize={labelFont} fill="#8195AE">
           N
         </text>
-        <text x={size - labelFont * 0.5} y={cy + labelFont * 0.35} textAnchor="end" fontSize={labelFont} fill="#9CA3AF">
+        <text x={size - labelFont * 0.5} y={cy + labelFont * 0.35} textAnchor="end" fontSize={labelFont} fill="#8195AE">
           E
         </text>
-        <text x={cx} y={size - 2} textAnchor="middle" fontSize={labelFont} fill="#9CA3AF">
+        <text x={cx} y={size - 2} textAnchor="middle" fontSize={labelFont} fill="#8195AE">
           S
         </text>
-        <text x={labelFont * 0.5} y={cy + labelFont * 0.35} textAnchor="start" fontSize={labelFont} fill="#9CA3AF">
+        <text x={labelFont * 0.5} y={cy + labelFont * 0.35} textAnchor="start" fontSize={labelFont} fill="#8195AE">
           W
         </text>
         <line

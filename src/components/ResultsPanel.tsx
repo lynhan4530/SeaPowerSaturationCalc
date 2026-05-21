@@ -18,20 +18,35 @@ import type { FriendlyShip, Missile, Scenario, TargetShip } from '../types';
 
 type ShipStatus = {
   text: string;
-  className: string;
+  badgeClass: string;
+  borderClass: string;
 };
+
+const STATUS_BADGE_BASE =
+  'shrink-0 rounded-sm border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest';
 
 function shipStatus(r: InterceptResult): ShipStatus {
   if (!r.converged) {
-    return { text: '⚠️ Non-converged solution', className: 'text-redAccent' };
+    return {
+      text: 'Non-converged',
+      badgeClass: `${STATUS_BADGE_BASE} animate-pulse border-redAccent/40 bg-redAccent/10 text-redAccent`,
+      borderClass: 'border-l-redAccent',
+    };
   }
   if (r.repositionTimeS > 0) {
     return {
-      text: 'Repositioning required',
-      className: r.repositionWarning ? 'text-amberAccent' : 'text-textPrimary',
+      text: 'Reposition req',
+      badgeClass: `${STATUS_BADGE_BASE} border-amberAccent/40 bg-amberAccent/10 text-amberAccent${
+        r.repositionWarning ? ' animate-pulse' : ''
+      }`,
+      borderClass: 'border-l-amberAccent',
     };
   }
-  return { text: 'In range', className: 'text-greenAccent' };
+  return {
+    text: 'In range',
+    badgeClass: `${STATUS_BADGE_BASE} border-greenAccent/40 bg-greenAccent/10 text-greenAccent`,
+    borderClass: 'border-l-greenAccent',
+  };
 }
 
 export function ResultsPanel() {
@@ -53,7 +68,7 @@ export function ResultsPanel() {
   return (
     <div className="space-y-4 p-4">
       <header className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-textSecondary">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-textSecondary">
           Results
         </h2>
         <label className="flex items-center gap-2 text-xs text-textSecondary">
@@ -70,7 +85,7 @@ export function ResultsPanel() {
                 patch: { hHour: e.target.value },
               })
             }
-            className={`w-28 rounded border bg-navy px-2 py-1 text-right text-textPrimary outline-none focus:border-greenAccent ${
+            className={`w-28 rounded border bg-navy px-2 py-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20 ${
               hHourValid ? 'border-panelBorder' : 'border-redAccent'
             }`}
           />
@@ -154,8 +169,10 @@ function TargetResultSection({
   return (
     <section className="rounded border border-panelBorder bg-panel">
       <div className="border-b border-panelBorder px-3 py-2">
-        <h3 className="text-sm font-semibold text-textPrimary">{target.name}</h3>
-        <p className="text-xs text-textSecondary">
+        <h3 className="text-sm font-bold uppercase tracking-wide text-textPrimary">
+          {target.name}
+        </h3>
+        <p className="font-mono text-xs text-textSecondary">
           {target.speedKnots.toFixed(1)} kts, heading {pad3(target.headingDeg)}&deg; &middot;{' '}
           {target.defenseLayers.length} defense layer
           {target.defenseLayers.length === 1 ? '' : 's'}
@@ -193,7 +210,7 @@ function TargetResultSection({
             <div className="rounded border border-panelBorder">
               <button
                 onClick={() => setShowSaturation((v) => !v)}
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-textSecondary hover:text-textPrimary"
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-bold uppercase tracking-widest text-textSecondary hover:text-textPrimary"
               >
                 <span>Saturation analysis</span>
                 <span>{showSaturation ? '−' : '+'}</span>
@@ -263,25 +280,27 @@ function SolutionBlock({
   segments.push(`Arrives: ${formatTime(r.arrivalTimeS, hHourBase)}`);
 
   return (
-    <div className="rounded border border-panelBorder bg-navy/40 p-2 text-xs">
+    <div
+      className={`rounded border border-l-4 border-panelBorder bg-navy/40 p-2 text-xs ${status.borderClass}`}
+    >
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-medium text-textPrimary">
           {ship?.name ?? 'Unknown ship'}
           {missile ? ` — ${missile.name}` : ''}
           {count ? ` ×${count}` : ''}
         </span>
-        <span className={status.className}>{status.text}</span>
+        <span className={status.badgeClass}>{status.text}</span>
       </div>
-      <p className="mt-1 text-textSecondary">
+      <p className="mt-1 font-mono text-textSecondary">
         {r.converged ? '' : 'Best estimate: '}
         {segments.join(' | ')}
       </p>
-      <p className="mt-0.5 text-textSecondary">
+      <p className="mt-0.5 font-mono text-textSecondary">
         Firing range: {r.firingRangeNm.toFixed(1)} nm
       </p>
       {r.repositionWarning && (
-        <p className="mt-1 inline-block rounded bg-amberAccent/20 px-2 py-0.5 text-amberAccent">
-          {'⚠️'} Repositioning exceeds{' '}
+        <p className="mt-1 inline-block rounded-sm border border-amberAccent/30 bg-amberAccent/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-amberAccent">
+          {'⚠'} Reposition exceeds{' '}
           {formatDuration(scenario.repositionWarningThresholdS)}
         </p>
       )}
@@ -307,17 +326,17 @@ function ArrivalTable({
   hHourBase,
 }: ArrivalTableProps) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-xs">
+    <div className="overflow-x-auto rounded border border-panelBorder">
+      <table className="w-full border-collapse text-xs [&_td]:border-r [&_td]:border-panelBorder/40 [&_td:last-child]:border-r-0 [&_th]:border-r [&_th]:border-panelBorder/40 [&_th:last-child]:border-r-0">
         <thead>
-          <tr className="text-left text-textSecondary">
-            <th className="border-b border-panelBorder px-1 py-1 font-medium">Ship</th>
-            <th className="border-b border-panelBorder px-1 py-1 font-medium">Missile</th>
-            <th className="border-b border-panelBorder px-1 py-1 text-right font-medium">Count</th>
-            <th className="border-b border-panelBorder px-1 py-1 text-right font-medium">Wait</th>
-            <th className="border-b border-panelBorder px-1 py-1 font-medium">Fire at</th>
-            <th className="border-b border-panelBorder px-1 py-1 font-medium">Arrives</th>
-            <th className="border-b border-panelBorder px-1 py-1 text-right font-medium">Delta</th>
+          <tr className="bg-surfaceAlt/50 text-left font-bold uppercase tracking-wider text-textSecondary">
+            <th className="px-2 py-1.5">Ship</th>
+            <th className="px-2 py-1.5">Missile</th>
+            <th className="px-2 py-1.5 text-right">Count</th>
+            <th className="px-2 py-1.5 text-right">Wait</th>
+            <th className="px-2 py-1.5">Fire at</th>
+            <th className="px-2 py-1.5">Arrives</th>
+            <th className="px-2 py-1.5 text-right">Delta</th>
           </tr>
         </thead>
         <tbody>
@@ -329,31 +348,28 @@ function ArrivalTable({
             const deltaText =
               delta === 0 ? '0s' : `${delta > 0 ? '+' : '−'}${Math.abs(delta)}s`;
             return (
-              <tr key={r.salvoId} className="text-textPrimary">
-                <td className="border-b border-panelBorder/50 px-1 py-1">
-                  {shipBySalvoId.get(r.salvoId)?.name ?? '—'}
-                </td>
-                <td className="border-b border-panelBorder/50 px-1 py-1">
-                  {missile?.name ?? '—'}
-                </td>
-                <td className="border-b border-panelBorder/50 px-1 py-1 text-right">
-                  {salvo?.count ?? 0}
-                </td>
-                <td className="border-b border-panelBorder/50 px-1 py-1 text-right">
-                  {Math.round(r.waitTimeS)}s
-                </td>
-                <td className="border-b border-panelBorder/50 px-1 py-1">
-                  {formatTime(r.fireTimeS, hHourBase)}
-                </td>
-                <td className="border-b border-panelBorder/50 px-1 py-1">
-                  {formatTime(r.arrivalTimeS, hHourBase)}
-                </td>
+              <tr key={r.salvoId} className="text-textPrimary odd:bg-surfaceAlt/20">
+                <td className="px-2 py-1">{shipBySalvoId.get(r.salvoId)?.name ?? '—'}</td>
+                <td className="px-2 py-1">{missile?.name ?? '—'}</td>
+                <td className="px-2 py-1 text-right font-mono">{salvo?.count ?? 0}</td>
+                <td className="px-2 py-1 text-right font-mono">{Math.round(r.waitTimeS)}s</td>
+                <td className="px-2 py-1 font-mono">{formatTime(r.fireTimeS, hHourBase)}</td>
+                <td className="px-2 py-1 font-mono">{formatTime(r.arrivalTimeS, hHourBase)}</td>
                 <td
-                  className={`border-b border-panelBorder/50 px-1 py-1 text-right ${
+                  className={`px-2 py-1 text-right font-mono ${
                     withinTol ? 'text-greenAccent' : 'text-redAccent'
                   }`}
                 >
-                  {deltaText} {withinTol ? '✓' : '✗'}
+                  <span className="inline-flex items-center justify-end gap-1.5">
+                    {deltaText}
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        withinTol
+                          ? 'bg-greenAccent shadow-[0_0_6px_#10B981]'
+                          : 'bg-redAccent shadow-[0_0_6px_#EF4444]'
+                      }`}
+                    />
+                  </span>
                 </td>
               </tr>
             );
@@ -408,20 +424,24 @@ function SaturationSection({
       <div className="flex flex-wrap gap-6">
         <CompassRose vectors={vectors} />
         <div className="min-w-[180px] flex-1">
-          <h4 className="mb-2 font-semibold text-textSecondary">Missiles per arrival window</h4>
+          <h4 className="mb-2 font-bold uppercase tracking-wider text-textSecondary">
+            Missiles per arrival window
+          </h4>
           <div className="space-y-1">
             {arrivalBuckets.map((b) => (
               <div key={b.timeS} className="flex items-center gap-2">
-                <span className="w-28 shrink-0 text-textSecondary">
+                <span className="w-28 shrink-0 font-mono text-textSecondary">
                   {formatTime(b.timeS, hHourBase)}
                 </span>
-                <div className="h-4 flex-1 rounded bg-navy">
+                <div className="h-3 flex-1 rounded-sm border border-panelBorder bg-navy">
                   <div
-                    className="h-4 rounded bg-[#3B82F6]"
+                    className="h-full rounded-sm bg-gradient-to-r from-skyAccent to-sky-600 shadow-[0_0_8px_rgba(56,189,248,0.45)]"
                     style={{ width: `${(b.count / maxBucket) * 100}%` }}
                   />
                 </div>
-                <span className="w-6 shrink-0 text-right text-textPrimary">{b.count}</span>
+                <span className="w-6 shrink-0 text-right font-mono text-textPrimary">
+                  {b.count}
+                </span>
               </div>
             ))}
           </div>
@@ -429,49 +449,53 @@ function SaturationSection({
       </div>
 
       <div>
-        <h4 className="mb-1 font-semibold text-textSecondary">Layer breakdown</h4>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="text-left text-textSecondary">
-              <th className="border-b border-panelBorder px-1 py-1 font-medium">Layer</th>
-              <th className="border-b border-panelBorder px-1 py-1 text-right font-medium">Incoming</th>
-              <th className="border-b border-panelBorder px-1 py-1 text-right font-medium">Intercepted</th>
-              <th className="border-b border-panelBorder px-1 py-1 text-right font-medium">Leakers</th>
-            </tr>
-          </thead>
-          <tbody>
-            {saturation.layerResults.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-1 py-1 italic text-textSecondary">
-                  No defense layers configured.
+        <h4 className="mb-1 font-bold uppercase tracking-wider text-textSecondary">
+          Layer breakdown
+        </h4>
+        <div className="overflow-hidden rounded border border-panelBorder">
+          <table className="w-full border-collapse [&_td]:border-r [&_td]:border-panelBorder/40 [&_td:last-child]:border-r-0 [&_th]:border-r [&_th]:border-panelBorder/40 [&_th:last-child]:border-r-0">
+            <thead>
+              <tr className="bg-surfaceAlt/50 text-left font-bold uppercase tracking-wider text-textSecondary">
+                <th className="px-2 py-1.5">Layer</th>
+                <th className="px-2 py-1.5 text-right">Incoming</th>
+                <th className="px-2 py-1.5 text-right">Intercepted</th>
+                <th className="px-2 py-1.5 text-right">Leakers</th>
+              </tr>
+            </thead>
+            <tbody>
+              {saturation.layerResults.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-2 py-1 italic text-textSecondary">
+                    No defense layers configured.
+                  </td>
+                </tr>
+              ) : (
+                saturation.layerResults.map((l, i) => (
+                  <tr key={`${l.layerName}-${i}`} className="text-textPrimary odd:bg-surfaceAlt/20">
+                    <td className="px-2 py-1">{l.layerName}</td>
+                    <td className="px-2 py-1 text-right font-mono">{l.incoming}</td>
+                    <td className="px-2 py-1 text-right font-mono text-greenAccent">
+                      {l.intercepted}
+                    </td>
+                    <td className="px-2 py-1 text-right font-mono">{l.leakers}</td>
+                  </tr>
+                ))
+              )}
+              <tr className="border-t border-panelBorder bg-surfaceAlt/40 font-bold uppercase tracking-wider text-textPrimary">
+                <td className="px-2 py-1.5" colSpan={3}>
+                  Hull impacts
+                </td>
+                <td
+                  className={`px-2 py-1.5 text-right font-mono ${
+                    saturation.hullImpacts > 0 ? 'text-redAccent' : 'text-greenAccent'
+                  }`}
+                >
+                  {saturation.hullImpacts}
                 </td>
               </tr>
-            ) : (
-              saturation.layerResults.map((l, i) => (
-                <tr key={`${l.layerName}-${i}`} className="text-textPrimary">
-                  <td className="border-b border-panelBorder/50 px-1 py-1">{l.layerName}</td>
-                  <td className="border-b border-panelBorder/50 px-1 py-1 text-right">{l.incoming}</td>
-                  <td className="border-b border-panelBorder/50 px-1 py-1 text-right text-greenAccent">
-                    {l.intercepted}
-                  </td>
-                  <td className="border-b border-panelBorder/50 px-1 py-1 text-right">{l.leakers}</td>
-                </tr>
-              ))
-            )}
-            <tr className="font-bold text-textPrimary">
-              <td className="px-1 py-1" colSpan={3}>
-                Hull impacts
-              </td>
-              <td
-                className={`px-1 py-1 text-right ${
-                  saturation.hullImpacts > 0 ? 'text-redAccent' : 'text-greenAccent'
-                }`}
-              >
-                {saturation.hullImpacts}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <VerdictCard saturation={saturation} />
@@ -491,11 +515,11 @@ function CompassRose({
   const labelFont = 11;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
-      <circle cx={cx} cy={cy} r={r} fill="#0A0F1E" stroke="#1F2937" strokeWidth={1} />
-      <text x={cx} y={labelFont} textAnchor="middle" fontSize={labelFont} fill="#9CA3AF">N</text>
-      <text x={size - 2} y={cy + 4} textAnchor="end" fontSize={labelFont} fill="#9CA3AF">E</text>
-      <text x={cx} y={size - 2} textAnchor="middle" fontSize={labelFont} fill="#9CA3AF">S</text>
-      <text x={2} y={cy + 4} textAnchor="start" fontSize={labelFont} fill="#9CA3AF">W</text>
+      <circle cx={cx} cy={cy} r={r} fill="#070C14" stroke="#1E2E4A" strokeWidth={1} />
+      <text x={cx} y={labelFont} textAnchor="middle" fontSize={labelFont} fill="#8195AE">N</text>
+      <text x={size - 2} y={cy + 4} textAnchor="end" fontSize={labelFont} fill="#8195AE">E</text>
+      <text x={cx} y={size - 2} textAnchor="middle" fontSize={labelFont} fill="#8195AE">S</text>
+      <text x={2} y={cy + 4} textAnchor="start" fontSize={labelFont} fill="#8195AE">W</text>
       {vectors.map((v) => {
         const rad = (((v.bearingDeg % 360) + 360) % 360 * Math.PI) / 180;
         const x = cx + Math.sin(rad) * (r - 4);
@@ -514,7 +538,7 @@ function CompassRose({
           />
         );
       })}
-      <circle cx={cx} cy={cy} r={2} fill="#9CA3AF" />
+      <circle cx={cx} cy={cy} r={2} fill="#8195AE" />
     </svg>
   );
 }
@@ -522,14 +546,16 @@ function CompassRose({
 function VerdictCard({ saturation }: { saturation: SaturationResult }) {
   if (saturation.saturated) {
     return (
-      <div className="rounded border border-redAccent bg-redAccent/15 px-3 py-2 font-semibold text-redAccent">
+      <div className="flex items-center gap-2 rounded-sm border border-redAccent/50 bg-redAccent/15 px-3 py-2 font-mono text-sm font-bold uppercase tracking-widest text-redAccent shadow-[0_0_12px_rgba(239,68,68,0.3)]">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-redAccent shadow-[0_0_8px_#EF4444]" />
         SATURATED &mdash; {saturation.hullImpacts} missile
         {saturation.hullImpacts === 1 ? '' : 's'} reach hull
       </div>
     );
   }
   return (
-    <div className="rounded border border-greenAccent bg-greenAccent/15 px-3 py-2 font-semibold text-greenAccent">
+    <div className="flex items-center gap-2 rounded-sm border border-greenAccent/50 bg-greenAccent/15 px-3 py-2 font-mono text-sm font-bold uppercase tracking-widest text-greenAccent shadow-[0_0_12px_rgba(16,185,129,0.25)]">
+      <span className="h-2 w-2 rounded-full bg-greenAccent shadow-[0_0_8px_#10B981]" />
       DEFENDED &mdash; 0 missiles reach hull
     </div>
   );

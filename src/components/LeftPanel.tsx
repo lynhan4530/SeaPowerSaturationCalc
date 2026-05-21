@@ -19,7 +19,7 @@ export function LeftPanel() {
   return (
     <aside className="w-1/3 min-w-[400px] overflow-y-auto border-r border-panelBorder bg-panel">
       <section className="border-b border-panelBorder p-3">
-        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-textSecondary">
+        <h3 className="mb-2 text-sm font-bold uppercase tracking-widest text-textSecondary">
           Scenario Notes
         </h3>
         <textarea
@@ -29,7 +29,7 @@ export function LeftPanel() {
           }
           placeholder="Mission notes, assumptions, intent…"
           rows={2}
-          className="w-full resize-y rounded border border-panelBorder bg-navy px-2 py-1 text-xs text-textPrimary outline-none focus:border-greenAccent"
+          className="w-full resize-y rounded border border-panelBorder bg-navy px-2 py-1 text-xs text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
         />
       </section>
 
@@ -76,7 +76,7 @@ function Section({
   return (
     <section className="border-b border-panelBorder p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-textSecondary">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-textSecondary">
           {title}
         </h3>
         <button
@@ -123,7 +123,7 @@ function FriendlyShipCard({
           className="flex-1 bg-transparent text-sm font-medium text-textPrimary outline-none focus:bg-navy focus:px-1"
         />
         {overMagazine && (
-          <span className="rounded bg-amberAccent/20 px-2 py-0.5 text-xs text-amberAccent">
+          <span className="rounded-sm border border-amberAccent/30 bg-amberAccent/10 px-2 py-0.5 font-mono text-xs uppercase tracking-wider text-amberAccent">
             {totalLoaded}/{ship.magazineSize} &mdash; over limit
           </span>
         )}
@@ -142,7 +142,7 @@ function FriendlyShipCard({
             min={0}
             value={ship.speedKnots}
             onChange={(e) => update({ speedKnots: Number(e.target.value) })}
-            className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right text-textPrimary outline-none"
+            className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
           />
         </label>
         <label className="flex items-center gap-1">
@@ -152,14 +152,14 @@ function FriendlyShipCard({
             min={0}
             value={ship.magazineSize}
             onChange={(e) => update({ magazineSize: Number(e.target.value) })}
-            className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right text-textPrimary outline-none"
+            className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
           />
         </label>
       </div>
 
       <div className="mt-2 space-y-2 border-t border-panelBorder pt-2">
         <div className="flex items-center justify-between">
-          <h5 className="text-xs uppercase tracking-wide text-textSecondary">Salvos</h5>
+          <h5 className="text-xs font-bold uppercase tracking-widest text-textSecondary">Salvos</h5>
           <button
             onClick={() => dispatch({ type: 'ADD_SALVO', scenarioId, shipId: ship.id })}
             disabled={missiles.length === 0 || targets.length === 0}
@@ -219,7 +219,7 @@ function SalvoRow({
           <select
             value={salvo.missileId}
             onChange={(e) => update({ missileId: e.target.value })}
-            className="ml-auto flex-1 rounded border border-panelBorder bg-navy px-1 py-0.5 text-textPrimary outline-none"
+            className="ml-auto flex-1 rounded border border-panelBorder bg-navy px-1 py-0.5 text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
           >
             {missiles.length === 0 && <option value="">—</option>}
             {missiles.map((m) => (
@@ -234,7 +234,7 @@ function SalvoRow({
           <select
             value={salvo.targetId}
             onChange={(e) => update({ targetId: e.target.value })}
-            className="ml-auto flex-1 rounded border border-panelBorder bg-navy px-1 py-0.5 text-textPrimary outline-none"
+            className="ml-auto flex-1 rounded border border-panelBorder bg-navy px-1 py-0.5 text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
           >
             {targets.length === 0 && <option value="">—</option>}
             {targets.map((t) => (
@@ -251,7 +251,7 @@ function SalvoRow({
             min={1}
             value={salvo.count}
             onChange={(e) => update({ count: Number(e.target.value) })}
-            className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right text-textPrimary outline-none"
+            className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
           />
         </label>
         <label className="flex items-center gap-1">
@@ -261,7 +261,7 @@ function SalvoRow({
             min={0}
             value={salvo.rangeToTargetNm}
             onChange={(e) => update({ rangeToTargetNm: Number(e.target.value) })}
-            className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right text-textPrimary outline-none"
+            className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
           />
         </label>
         <div className="col-span-2 flex items-center justify-between gap-2">
@@ -321,7 +321,7 @@ function TargetShipCard({
             min={0}
             value={target.speedKnots}
             onChange={(e) => update({ speedKnots: Number(e.target.value) })}
-            className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right text-textPrimary outline-none"
+            className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
           />
         </label>
         <div className="flex items-center justify-between gap-1">

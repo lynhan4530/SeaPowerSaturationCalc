@@ -38,7 +38,9 @@ export function MissileLibrary({ onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-panelBorder px-4 py-3">
-          <h2 className="text-base font-semibold text-textPrimary">Missile Library</h2>
+          <h2 className="text-base font-bold uppercase tracking-widest text-textPrimary">
+            Missile Library
+          </h2>
           <div className="flex gap-2">
             <button
               onClick={() => dispatch({ type: 'ADD_MISSILE' })}
@@ -62,7 +64,7 @@ export function MissileLibrary({ onClose }: Props) {
             </p>
           ) : (
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-panel text-left text-xs uppercase tracking-wide text-textSecondary">
+              <thead className="sticky top-0 bg-panel text-left text-xs font-bold uppercase tracking-widest text-textSecondary">
                 <tr className="border-b border-panelBorder">
                   <th className="px-4 py-2 font-medium">Name</th>
                   <th className="px-4 py-2 font-medium">Speed (kts)</th>
@@ -73,7 +75,7 @@ export function MissileLibrary({ onClose }: Props) {
               </thead>
               <tbody>
                 {state.missileLibrary.map((m) => (
-                  <tr key={m.id} className="border-b border-panelBorder/50">
+                  <tr key={m.id} className="odd:bg-surfaceAlt/30 hover:bg-surfaceAlt/50">
                     <td className="px-4 py-2">
                       <input
                         type="text"
@@ -90,7 +92,7 @@ export function MissileLibrary({ onClose }: Props) {
                         onChange={(e) =>
                           update(m.id, { speedKnots: Number(e.target.value) })
                         }
-                        className="w-24 bg-transparent text-textPrimary outline-none focus:bg-navy focus:px-1"
+                        className="w-24 bg-transparent font-mono text-textPrimary outline-none focus:bg-navy focus:px-1"
                       />
                     </td>
                     <td className="px-4 py-2">
@@ -101,7 +103,7 @@ export function MissileLibrary({ onClose }: Props) {
                         onChange={(e) =>
                           update(m.id, { maxRangeNm: Number(e.target.value) })
                         }
-                        className="w-24 bg-transparent text-textPrimary outline-none focus:bg-navy focus:px-1"
+                        className="w-24 bg-transparent font-mono text-textPrimary outline-none focus:bg-navy focus:px-1"
                       />
                     </td>
                     <td className="px-4 py-2">

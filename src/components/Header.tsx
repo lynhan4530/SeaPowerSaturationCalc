@@ -65,7 +65,7 @@ export function Header({ onOpenMissileLibrary }: Props) {
   };
 
   const toolBtn =
-    'rounded border border-panelBorder px-3 py-1 text-sm hover:bg-navy disabled:opacity-40';
+    'rounded border border-panelBorder px-3 py-1 font-mono text-xs uppercase tracking-wider text-textSecondary hover:border-skyAccent/50 hover:bg-navy hover:text-textPrimary disabled:opacity-40 disabled:hover:border-panelBorder disabled:hover:text-textSecondary';
 
   return (
     <header className="border-b border-panelBorder bg-panel">
@@ -85,7 +85,7 @@ export function Header({ onOpenMissileLibrary }: Props) {
                     if (e.key === 'Enter') commitRename();
                     if (e.key === 'Escape') setEditingId(null);
                   }}
-                  className="w-32 rounded border border-greenAccent bg-navy px-2 py-1 text-sm text-textPrimary outline-none"
+                  className="w-32 rounded border border-skyAccent bg-navy px-2 py-1 text-sm text-textPrimary outline-none focus:ring-1 focus:ring-skyAccent/20"
                 />
               );
             }
@@ -119,8 +119,10 @@ export function Header({ onOpenMissileLibrary }: Props) {
             return (
               <span
                 key={s.id}
-                className={`group flex items-center whitespace-nowrap rounded ${
-                  isActive ? 'bg-navy' : 'hover:bg-navy'
+                className={`group flex items-center whitespace-nowrap rounded border-b-2 ${
+                  isActive
+                    ? 'border-b-skyAccent bg-navy'
+                    : 'border-b-transparent hover:bg-navy'
                 }`}
               >
                 <button
@@ -148,7 +150,7 @@ export function Header({ onOpenMissileLibrary }: Props) {
           })}
           <button
             onClick={() => dispatch({ type: 'ADD_SCENARIO' })}
-            className="rounded px-2 py-1 text-sm text-textSecondary hover:text-textPrimary"
+            className="rounded px-2 py-1 font-mono text-xs uppercase tracking-wider text-textSecondary hover:text-textPrimary"
           >
             + New
           </button>

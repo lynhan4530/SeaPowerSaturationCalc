@@ -65,12 +65,12 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h4 className="text-xs uppercase tracking-wide text-textSecondary">
+        <h4 className="text-xs font-bold uppercase tracking-widest text-textSecondary">
           Defense layers (outermost first)
         </h4>
         <button
           onClick={() => dispatch({ type: 'ADD_DEFENSE_LAYER', scenarioId, targetId })}
-          className="rounded border border-panelBorder px-2 py-0.5 text-xs text-textSecondary hover:text-textPrimary"
+          className="rounded border border-panelBorder px-2 py-0.5 font-mono text-xs uppercase tracking-wider text-textSecondary hover:border-skyAccent/50 hover:text-textPrimary"
         >
           + Layer
         </button>
@@ -130,7 +130,7 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                     onChange={(e) =>
                       update(layer.id, { interceptsPerWindow: Number(e.target.value) })
                     }
-                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right text-textPrimary outline-none"
+                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
                   />
                 </label>
                 <label className="flex items-center gap-1">
@@ -143,7 +143,7 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                     onChange={(e) =>
                       update(layer.id, { windowS: Number(e.target.value) })
                     }
-                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right text-textPrimary outline-none"
+                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
                   />
                 </label>
                 <label className="flex items-center gap-1">
@@ -158,7 +158,7 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                         minRangeNm: e.target.value === '' ? undefined : Number(e.target.value),
                       })
                     }
-                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right text-textPrimary outline-none"
+                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
                   />
                 </label>
                 <label className="flex items-center gap-1">
@@ -173,7 +173,7 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                         maxRangeNm: e.target.value === '' ? undefined : Number(e.target.value),
                       })
                     }
-                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right text-textPrimary outline-none"
+                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
                   />
                 </label>
               </div>

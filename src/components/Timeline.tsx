@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useScenario } from '../hooks/useScenario';
 import { solveGroup, type GroupResult, type InterceptResult } from '../lib/calc';
 import {
@@ -14,14 +14,19 @@ import type { FriendlyShip, Missile, Scenario, TargetShip } from '../types';
 // Layout constants (px).
 const LEFT_GUTTER = 140;
 const TOP_AXIS = 26;
-const LANE_HEIGHT = 30;
-const BAR_HEIGHT = 16;
+const LANE_HEIGHT = 28;
+const BAR_HEIGHT = 12;
 const RIGHT_PAD = 16;
 
-// Fixed phase colors (PRD): reposition amber, wait gray, flight blue.
+// Fixed phase colors (PRD): reposition amber, wait slate, flight sky.
 const COLOR_REPOSITION = '#F59E0B';
-const COLOR_WAIT = '#6B7280';
-const COLOR_FLIGHT = '#3B82F6';
+const COLOR_WAIT = '#64748B';
+const COLOR_FLIGHT = '#38BDF8';
+
+// Phase label text fills (legible against each segment fill).
+const TEXT_ON_REPOSITION = '#1A1206';
+const TEXT_ON_WAIT = '#E6EDF7';
+const TEXT_ON_FLIGHT = '#06283D';
 
 const clamp = (v: number, lo: number, hi: number): number =>
   Math.min(hi, Math.max(lo, v));
@@ -51,7 +56,7 @@ export function Timeline() {
   return (
     <div className="space-y-4 p-4">
       <header className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-textSecondary">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-textSecondary">
           Timeline
         </h2>
         <Legend />
@@ -88,11 +93,11 @@ function Legend() {
     { label: 'Flight', color: COLOR_FLIGHT },
   ];
   return (
-    <div className="flex items-center gap-3 text-xs text-textSecondary">
+    <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-wider text-textSecondary">
       {items.map((it) => (
         <span key={it.label} className="flex items-center gap-1">
           <span
-            className="inline-block h-3 w-3 rounded-sm"
+            className="inline-block h-2.5 w-2.5 rounded-sm"
             style={{ backgroundColor: it.color }}
           />
           {it.label}
@@ -158,6 +163,12 @@ function TargetTimeline({
   const [panS, setPanS] = useState(0);
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
   const dragRef = useRef<{ startX: number; startPan: number } | null>(null);
+
+  // Namespaced <defs> ids — multiple <TargetTimeline> svgs share one document.
+  const uid = useId().replace(/:/g, '');
+  const repoGradId = `repo-${uid}`;
+  const flightGradId = `flight-${uid}`;
+  const glowId = `glow-${uid}`;
 
   if (!group) return null;
 
@@ -247,8 +258,10 @@ function TargetTimeline({
   return (
     <section className="rounded border border-panelBorder bg-panel">
       <div className="border-b border-panelBorder px-3 py-2">
-        <h3 className="text-sm font-semibold text-textPrimary">{target.name}</h3>
-        <p className="text-xs text-textSecondary">
+        <h3 className="text-sm font-bold uppercase tracking-wide text-textPrimary">
+          {target.name}
+        </h3>
+        <p className="font-mono text-xs text-textSecondary">
           Sync arrival {formatTime(sync, hHourBase)} · ±{tolS}s tolerance
         </p>
       </div>
@@ -260,13 +273,31 @@ function TargetTimeline({
           className="block select-none"
           style={{ touchAction: 'none' }}
         >
+          <defs>
+            <linearGradient id={repoGradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#FBBF24" />
+              <stop offset="100%" stopColor="#D97706" />
+            </linearGradient>
+            <linearGradient id={flightGradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#7DD3FC" />
+              <stop offset="100%" stopColor="#0EA5E9" />
+            </linearGradient>
+            <filter id={glowId} x="-150%" y="-150%" width="400%" height="400%">
+              <feGaussianBlur stdDeviation="1.6" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
           {/* Background / pan surface */}
           <rect
             x={0}
             y={0}
             width={plotWidth}
             height={height}
-            fill="#0A0F1E"
+            fill="#070C14"
             style={{ cursor: dragRef.current ? 'grabbing' : 'grab' }}
             onPointerDown={onBgPointerDown}
             onPointerMove={onBgPointerMove}
@@ -298,15 +329,17 @@ function TargetTimeline({
                 y1={TOP_AXIS}
                 x2={x(t)}
                 y2={lanesBottom}
-                stroke="#1F2937"
+                stroke="#1E2E4A"
                 strokeWidth={1}
+                strokeDasharray="2 4"
               />
               <text
                 x={x(t)}
                 y={TOP_AXIS - 8}
                 textAnchor="middle"
                 fontSize={10}
-                fill="#9CA3AF"
+                fontFamily="'JetBrains Mono', ui-monospace, monospace"
+                fill="#8195AE"
               >
                 {tickLabel(t)}
               </text>
@@ -316,7 +349,8 @@ function TargetTimeline({
                   y={lanesBottom + 12}
                   textAnchor="middle"
                   fontSize={9}
-                  fill="#9CA3AF"
+                  fontFamily="'JetBrains Mono', ui-monospace, monospace"
+                  fill="#8195AE"
                 >
                   {formatClock(hHourBase, t)}
                 </text>
@@ -341,46 +375,95 @@ function TargetTimeline({
             const ship = shipBySalvoId.get(r.salvoId);
             const laneY = TOP_AXIS + i * LANE_HEIGHT;
             const barY = laneY + (LANE_HEIGHT - BAR_HEIGHT) / 2;
-            const color = shipColorById.get(ship?.id ?? '') ?? '#9CA3AF';
+            const color = shipColorById.get(ship?.id ?? '') ?? '#8195AE';
+            const ready = !r.converged
+              ? '#EF4444'
+              : r.repositionTimeS > 0
+              ? '#F59E0B'
+              : '#10B981';
             const repoEnd = r.repositionTimeS;
             const waitEnd = r.fireTimeS; // reposition + wait
             const flightEnd = r.arrivalTimeS;
-            const seg = (t0: number, t1: number, fill: string, key: string) => {
+            const seg = (
+              t0: number,
+              t1: number,
+              fill: string,
+              key: string,
+              label: string,
+              textFill: string,
+            ) => {
               if (t1 - t0 <= 0) return null;
               const left = x(t0);
               const w = (t1 - t0) * pxPerS;
+              const barW = Math.max(w, 0.5);
               return (
-                <rect
-                  key={key}
-                  x={left}
-                  y={barY}
-                  width={Math.max(w, 0.5)}
-                  height={BAR_HEIGHT}
-                  fill={fill}
-                  opacity={r.converged ? 0.9 : 0.45}
-                  onMouseEnter={(e) => showTooltip(r, e)}
-                  onMouseMove={(e) => showTooltip(r, e)}
-                  onMouseLeave={() => setTooltip(null)}
-                />
+                <g key={key}>
+                  <rect
+                    x={left}
+                    y={barY}
+                    width={barW}
+                    height={BAR_HEIGHT}
+                    rx={1}
+                    fill={fill}
+                    opacity={r.converged ? 0.95 : 0.4}
+                    onMouseEnter={(e) => showTooltip(r, e)}
+                    onMouseMove={(e) => showTooltip(r, e)}
+                    onMouseLeave={() => setTooltip(null)}
+                  />
+                  {barW >= 50 && (
+                    <text
+                      x={left + barW / 2}
+                      y={barY + BAR_HEIGHT / 2 + 3}
+                      textAnchor="middle"
+                      fontSize={8}
+                      fontWeight={700}
+                      letterSpacing={1}
+                      fontFamily="'JetBrains Mono', ui-monospace, monospace"
+                      fill={textFill}
+                      opacity={r.converged ? 0.9 : 0.5}
+                      pointerEvents="none"
+                    >
+                      {label}
+                    </text>
+                  )}
+                </g>
               );
             };
             return (
               <g key={r.salvoId}>
-                {/* Lane label */}
-                <circle cx={10} cy={laneY + LANE_HEIGHT / 2} r={4} fill={color} />
+                {/* Ship identity stripe + readiness status dot */}
+                <rect x={0} y={laneY + 5} width={2} height={LANE_HEIGHT - 10} fill={color} opacity={0.85} />
+                <circle
+                  cx={12}
+                  cy={laneY + LANE_HEIGHT / 2}
+                  r={4}
+                  fill={ready}
+                  filter={`url(#${glowId})`}
+                />
                 <text
-                  x={20}
+                  x={22}
                   y={laneY + LANE_HEIGHT / 2 + 3}
                   fontSize={11}
-                  fill="#F9FAFB"
+                  fill="#E6EDF7"
                 >
                   {truncate(ship?.name ?? 'Ship', 18)}
                 </text>
                 {/* Segments (chronological: reposition → wait → flight) */}
-                {seg(0, repoEnd, COLOR_REPOSITION, 'repo')}
-                {seg(repoEnd, waitEnd, COLOR_WAIT, 'wait')}
-                {seg(waitEnd, flightEnd, COLOR_FLIGHT, 'flight')}
-                {/* Arrival tick */}
+                {seg(0, repoEnd, `url(#${repoGradId})`, 'repo', 'REPOSITION', TEXT_ON_REPOSITION)}
+                {seg(repoEnd, waitEnd, COLOR_WAIT, 'wait', 'WAIT', TEXT_ON_WAIT)}
+                {seg(waitEnd, flightEnd, `url(#${flightGradId})`, 'flight', 'FLIGHT', TEXT_ON_FLIGHT)}
+                {/* Transition node: firing point */}
+                {flightEnd > waitEnd && (
+                  <circle
+                    cx={x(waitEnd)}
+                    cy={barY + BAR_HEIGHT / 2}
+                    r={2.5}
+                    fill={COLOR_FLIGHT}
+                    filter={`url(#${glowId})`}
+                    pointerEvents="none"
+                  />
+                )}
+                {/* Arrival tick + node */}
                 <line
                   x1={x(flightEnd)}
                   y1={barY - 2}
@@ -390,6 +473,14 @@ function TargetTimeline({
                   strokeWidth={2}
                   pointerEvents="none"
                 />
+                <circle
+                  cx={x(flightEnd)}
+                  cy={barY + BAR_HEIGHT / 2}
+                  r={3}
+                  fill="#EF4444"
+                  filter={`url(#${glowId})`}
+                  pointerEvents="none"
+                />
               </g>
             );
           })}
@@ -397,14 +488,19 @@ function TargetTimeline({
 
         {tooltip && (
           <div
-            className="pointer-events-none absolute z-10 max-w-xs rounded border border-panelBorder bg-navy/95 px-2 py-1 text-xs text-textPrimary shadow-lg"
+            className="pointer-events-none absolute z-10 max-w-xs rounded-sm border border-panelBorder bg-navy/95 px-2 py-1 text-xs text-textPrimary shadow-lg"
             style={{ left: tooltip.x, top: tooltip.y }}
           >
             {tooltip.warn && (
-              <div className="text-redAccent">⚠️ Non-converged solution</div>
+              <div className="font-mono uppercase tracking-wider text-redAccent">
+                ⚠ Non-converged solution
+              </div>
             )}
             {tooltip.lines.map((l, i) => (
-              <div key={i} className={i === 0 ? 'font-medium' : 'text-textSecondary'}>
+              <div
+                key={i}
+                className={i === 0 ? 'font-medium' : 'font-mono text-textSecondary'}
+              >
                 {l}
               </div>
             ))}
