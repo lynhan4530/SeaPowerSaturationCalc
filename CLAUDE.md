@@ -9,7 +9,7 @@ Fire-control planning web app for the game *Sea Power*. Greenfield build from
 - Tailwind CSS 3 (custom palette in `tailwind.config.js`)
 - State: `useReducer` + Context (no external state lib). See `src/hooks/useScenario.tsx`.
 - Persistence: `localStorage`. See `src/lib/storage.ts`.
-- Tests: Vitest + jsdom (added but not yet exercised — Stage 3 will populate).
+- Tests: Vitest + jsdom. Suite lives in `src/lib/__tests__/calc.test.ts` (TC-01..46).
 
 ## Commands
 
@@ -17,7 +17,7 @@ Fire-control planning web app for the game *Sea Power*. Greenfield build from
 $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
 npm install         # one-time
 npm run dev         # Vite dev server at http://localhost:5173/
-npm test            # Vitest (Stage 3 onwards)
+npm test            # Vitest
 npx tsc --noEmit    # typecheck only
 ```
 
@@ -27,14 +27,30 @@ installed; new windows pick up PATH automatically.
 ## Build plan
 
 See `C:\Users\lynha\.claude\plans\read-the-prd-md-file-validated-wolf.md`
-for the full plan. Six stages:
+for the full plan. The original six stages are **all shipped**:
 
 1. **Foundation** ✅ — types, geo, storage, reducer, missile library modal
 2. **Left Panel** ✅ — friendly ships, target ships, CompassInput, DefenseLayerEditor (drag reorder)
-3. **Solver** ⬜ — `src/lib/calc.ts` + Vitest suite (TC-01..17, TC-21..27, TC-35..36)
-4. **Results Panel** ⬜
-5. **Timeline** ⬜
-6. **Polish** ⬜ — Header (scenarios CRUD + import/export), theming, badges
+3. **Solver** ✅ — `src/lib/calc.ts` + Vitest suite (TC-01..17, TC-21..27, TC-35..36)
+4. **Results Panel** ✅
+5. **Timeline** ✅
+6. **Polish** ✅ — Header (scenarios CRUD + import/export), theming, badges
+
+### Post-launch work
+
+- **Inverse solver** ✅ shipped on branch `feat/inverse-solver` (PR #1, left open
+  for review). `solveInverseSaturation()` in `calc.ts` is the pure dual of
+  `computeLayerBreakdown`: under synchronized arrival,
+  `minSaturatingSalvo = Σ(interceptsPerWindow over engaging layers) + 1`. Surfaced
+  as `SaturationThresholdCard` in `ResultsPanel`. Tests TC-41..46.
+- **Channel-based defense + leak probability** ⬜ **designed, not built** — see
+  `PHASE2_DESIGN.md`. Replaces flat `interceptsPerWindow` with per-layer weapon
+  systems (`channels × engagementsPerChannel`, per-system `pk`) and turns the
+  binary SATURATED/DEFENDED verdict into a leak probability. Reduces exactly to
+  the current model at `pk = 1` (the migration anchor). Build is **on hold** —
+  do not start without explicit user go-ahead. The channel/pk data comes from the
+  handed-off `presets.json` parser (separate effort).
+- **`presets.json` parser** — handed off to a separate agent (Option B).
 
 ## PRD deviations (decided with user — do not silently revert)
 
@@ -60,12 +76,15 @@ src/
   lib/
     geo.ts              — projectPosition, bearingTo, distance (pure, no React)
     storage.ts          — localStorage I/O, export/import with rename-on-collision
-    calc.ts             — Stage 3: solver, group sync, clustering, layer breakdown
+    calc.ts             — solver, group sync, clustering, layer breakdown, inverse solver
+    __tests__/calc.test.ts — Vitest suite (TC-01..46)
   components/
     Header.tsx, LeftPanel.tsx, RightPanel.tsx
     CompassInput.tsx, DefenseLayerEditor.tsx, MissileLibrary.tsx
-    ResultsPanel.tsx, Timeline.tsx  (later stages)
+    ResultsPanel.tsx, Timeline.tsx
 ```
+
+`PHASE2_DESIGN.md` (repo root) holds the channel-based-defense design note.
 
 ## Conventions
 
