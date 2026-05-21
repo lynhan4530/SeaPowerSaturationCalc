@@ -7,6 +7,7 @@ import type {
   Salvo,
   Scenario,
   TargetShip,
+  WeaponSystem,
 } from '../../types';
 import {
   clusterBearings,
@@ -16,6 +17,7 @@ import {
   solveIntercept,
   solveInverseSaturation,
 } from '../calc';
+import { migrateScenario } from '../storage';
 
 let nextId = 0;
 const id = (prefix: string) => `${prefix}-${++nextId}`;
@@ -68,6 +70,8 @@ const target = (
   defenseLayers,
 });
 
+// Legacy-style helper: a layer with a single pk=1 SARH system. Reproduces the
+// pre-Phase-2 integer model, so TC-21..46 read unchanged.
 const layer = (
   name: string,
   interceptsPerWindow: number,
@@ -76,10 +80,41 @@ const layer = (
 ): DefenseLayer => ({
   id: id('lyr'),
   name,
-  interceptsPerWindow,
   windowS,
-  ...opts,
+  weaponSystems: [
+    {
+      id: id('ws'),
+      name,
+      guidance: 'SARH',
+      channels: interceptsPerWindow,
+      engagementsPerChannel: 1,
+      pk: 1,
+      ...opts,
+    },
+  ],
 });
+
+const ws = (
+  pk: number,
+  channels: number,
+  engagementsPerChannel = 1,
+  opts: { name?: string; minRangeNm?: number; maxRangeNm?: number } = {},
+): WeaponSystem => ({
+  id: id('ws'),
+  name: opts.name ?? 'WS',
+  guidance: 'SARH',
+  channels,
+  engagementsPerChannel,
+  pk,
+  minRangeNm: opts.minRangeNm,
+  maxRangeNm: opts.maxRangeNm,
+});
+
+const sysLayer = (
+  name: string,
+  windowS: number,
+  weaponSystems: WeaponSystem[],
+): DefenseLayer => ({ id: id('lyr'), name, windowS, weaponSystems });
 
 const scenario = (
   ships: FriendlyShip[],
@@ -90,10 +125,22 @@ const scenario = (
   name: 'test',
   simultaneityToleranceS: 10,
   repositionWarningThresholdS: 3600,
+  saturationConfidence: 0.5,
   friendlyShips: ships,
   targetShips: targets,
   ...overrides,
 });
+
+// Run the full saturation pipeline for a single stationary in-range salvo so all
+// missiles share one arrival window. Returns the SaturationResult.
+const satFor = (tgt: TargetShip, count: number, confidence = 0.5) => {
+  const m = missile('AShM', 500, 100);
+  const s = salvo(m.id, tgt.id, count, 50, 0);
+  const sh = ship('A', 0, [s]);
+  const sc = scenario([sh], [tgt], { saturationConfidence: confidence });
+  const g = solveGroup([sh], [s], [m], tgt, sc);
+  return computeSaturation(g, [s], tgt, confidence);
+};
 
 // ───────── Solver ─────────
 
@@ -544,6 +591,133 @@ describe('TC-46: negative interceptsPerWindow clamps to 0 capacity', () => {
     const inv = solveInverseSaturation(tgt);
     expect(inv.interceptCapacity).toBe(0);
     expect(inv.minSaturatingSalvo).toBe(1);
+  });
+});
+
+// ───────── Channel-based defense + leak probability (Phase 2) ─────────
+
+describe('TC-47: pk=1 layer with capacity ≥ raid leaks nothing', () => {
+  it('4 channels ×1 pk1 vs 4 incoming → 0 expected impacts, defended', () => {
+    const tgt = target('T', 0, 0, [sysLayer('SAM', 30, [ws(1, 4)])]);
+    const sat = satFor(tgt, 4);
+    expect(sat.hullImpacts).toBeCloseTo(0, 6);
+    expect(sat.saturationProbability).toBeCloseTo(0, 6);
+    expect(sat.saturated).toBe(false);
+  });
+});
+
+describe('TC-48: pk=1 raid beyond capacity saturates', () => {
+  it('4 channels ×1 pk1 vs 6 incoming → 2 expected impacts, P=1', () => {
+    const tgt = target('T', 0, 0, [sysLayer('SAM', 30, [ws(1, 4)])]);
+    const sat = satFor(tgt, 6);
+    expect(sat.hullImpacts).toBeCloseTo(2, 6);
+    expect(sat.saturationProbability).toBeCloseTo(1, 6);
+    expect(sat.saturated).toBe(true);
+  });
+});
+
+describe('TC-49: pk<1 single shot is probabilistic', () => {
+  it('1 channel pk0.8 vs 1 incoming → q=0.2 expected impacts, P=0.2', () => {
+    const tgt = target('T', 0, 0, [sysLayer('SAM', 30, [ws(0.8, 1)])]);
+    const sat = satFor(tgt, 1);
+    expect(sat.hullImpacts).toBeCloseTo(0.2, 6);
+    expect(sat.saturationProbability).toBeCloseTo(0.2, 6);
+    expect(sat.saturated).toBe(false);
+  });
+});
+
+describe('TC-50: legacy scenario migrates to a pk=1 system, reproducing old math', () => {
+  it('synthesizes one SARH system per layer and matches the TC-22 breakdown', () => {
+    const legacy = {
+      id: 'sc-legacy',
+      name: 'legacy',
+      simultaneityToleranceS: 10,
+      repositionWarningThresholdS: 3600,
+      friendlyShips: [],
+      targetShips: [
+        {
+          id: 't-legacy',
+          name: 'T',
+          speedKnots: 0,
+          headingDeg: 0,
+          defenseLayers: [
+            { id: 'l1', name: 'SM-2', interceptsPerWindow: 6, windowS: 30 },
+            { id: 'l2', name: 'CIWS', interceptsPerWindow: 4, windowS: 5 },
+          ],
+        },
+      ],
+    } as unknown as Scenario;
+
+    const migrated = migrateScenario(legacy);
+    expect(migrated.saturationConfidence).toBe(0.5);
+    const layers = migrated.targetShips[0].defenseLayers;
+    expect(layers[0].weaponSystems).toHaveLength(1);
+    expect(layers[0].weaponSystems[0]).toMatchObject({
+      channels: 6,
+      engagementsPerChannel: 1,
+      pk: 1,
+      guidance: 'SARH',
+    });
+
+    const br = computeLayerBreakdown([salvo('m', 't-legacy', 16, 50, 0)], [0], layers);
+    expect(br[0]).toMatchObject({ incoming: 16, intercepted: 6, leakers: 10 });
+    expect(br[1]).toMatchObject({ incoming: 10, intercepted: 4, leakers: 6 });
+  });
+});
+
+describe('TC-51: engagementsPerChannel multiplies a window’s shot budget', () => {
+  it('2 channels ×2 pk0.5 spreads 4 shots; coverage depends on raid size', () => {
+    const tgt = target('T', 0, 0, [sysLayer('SAM', 30, [ws(0.5, 2, 2)])]);
+    // 4 incoming, 4 shots → one shot each → expected impacts 4 × 0.5 = 2.
+    expect(satFor(tgt, 4).hullImpacts).toBeCloseTo(2, 6);
+    // 2 incoming, 4 shots → two shots each → expected 2 × 0.25 = 0.5.
+    expect(satFor(tgt, 2).hullImpacts).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('TC-52: multiple systems in a layer pool their shots', () => {
+  it('two pk0.5 single-channel systems double up on a lone missile (q=0.25)', () => {
+    const two = target('T', 0, 0, [sysLayer('L', 30, [ws(0.5, 1), ws(0.5, 1)])]);
+    const one = target('T', 0, 0, [sysLayer('L', 30, [ws(0.5, 1)])]);
+    expect(satFor(two, 1).hullImpacts).toBeCloseTo(0.25, 6);
+    expect(satFor(one, 1).hullImpacts).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('TC-53: a system out of envelope at arrival contributes no shots', () => {
+  it('minRange 5 system is excluded; only the engaging system fires', () => {
+    const tgt = target('T', 0, 0, [
+      sysLayer('L', 30, [ws(1, 2), ws(1, 10, 1, { minRangeNm: 5 })]),
+    ]);
+    const br = computeLayerBreakdown([salvo('m', tgt.id, 3, 50, 0)], [0], tgt.defenseLayers);
+    expect(br[0]).toMatchObject({ incoming: 3, intercepted: 2, leakers: 1 });
+  });
+});
+
+describe('TC-54: inverse solver threshold depends on confidence', () => {
+  it('pk0.5 ×2 needs 2 arrivals at 50% but 3 at 90%', () => {
+    const tgt = target('T', 0, 0, [sysLayer('SAM', 30, [ws(0.5, 2)])]);
+    expect(solveInverseSaturation(tgt, 0.5).minSaturatingSalvo).toBe(2);
+    expect(solveInverseSaturation(tgt, 0.9).minSaturatingSalvo).toBe(3);
+  });
+  it('at pk=1 it collapses to (Σ shots) + 1 regardless of confidence', () => {
+    const tgt = target('T', 0, 0, [sysLayer('SAM', 30, [ws(1, 2)])]);
+    const inv = solveInverseSaturation(tgt, 0.5);
+    expect(inv.interceptCapacity).toBe(2);
+    expect(inv.minSaturatingSalvo).toBe(3);
+    expect(solveInverseSaturation(tgt, 0.9).minSaturatingSalvo).toBe(3);
+  });
+});
+
+describe('TC-55: survival probability compounds across layers', () => {
+  it('two pk0.5 layers vs 1 missile → q = 0.25 expected on hull', () => {
+    const tgt = target('T', 0, 0, [
+      sysLayer('Outer', 30, [ws(0.5, 1)]),
+      sysLayer('Inner', 5, [ws(0.5, 1)]),
+    ]);
+    const sat = satFor(tgt, 1);
+    expect(sat.hullImpacts).toBeCloseTo(0.25, 6);
+    expect(sat.saturationProbability).toBeCloseTo(0.25, 6);
   });
 });
 

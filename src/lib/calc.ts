@@ -1,12 +1,17 @@
 import type {
   DefenseLayer,
   FriendlyShip,
+  GuidanceType,
   Missile,
   Salvo,
   Scenario,
   TargetShip,
+  WeaponSystem,
 } from '../types';
 import { bearingTo, distance, projectPosition } from './geo';
+
+/** Default leak-probability threshold for the SATURATED verdict / inverse solver. */
+export const DEFAULT_SATURATION_CONFIDENCE = 0.5;
 
 export type InterceptResult = {
   shipId: string;
@@ -34,6 +39,8 @@ export type GroupResult = {
 
 export type LayerResult = {
   layerName: string;
+  // All three are *expected* values (Σ per-missile survival probability), so they
+  // are fractional in general and exact integers when every pk = 1.
   incoming: number;
   intercepted: number;
   leakers: number;
@@ -48,23 +55,42 @@ export type SaturationResult = {
   totalIncoming: number;
   bearingClusters: BearingCluster[];
   layerResults: LayerResult[];
+  // Expected missiles reaching the hull (Σ final survival probability).
   hullImpacts: number;
+  // P(at least one missile reaches the hull) = 1 − Π(1 − survival_i).
+  saturationProbability: number;
+  // saturationProbability ≥ confidence.
   saturated: boolean;
+};
+
+export type WeaponSystemCapacity = {
+  systemName: string;
+  guidance: GuidanceType;
+  engages: boolean;
+  // channels × engagementsPerChannel (clamped ≥ 0), 0 when not engaging.
+  shots: number;
+  pk: number;
 };
 
 export type LayerCapacity = {
   layerName: string;
   engages: boolean;
-  interceptsPerWindow: number;
-  // Counts toward the saturation threshold only when the layer engages.
+  // Σ engaging shots in one window.
+  shots: number;
+  // Σ engaging shots × pk — expected kills. Equals `shots` when every pk = 1.
+  // (Name kept for the threshold card; it is the legacy "effective capacity".)
   effectiveCapacity: number;
+  systems: WeaponSystemCapacity[];
 };
 
 export type InverseSaturationResult = {
   targetId: string;
-  // Σ effectiveCapacity over engaging layers — kills available in one window.
+  // Confidence used to derive minSaturatingSalvo.
+  confidence: number;
+  // Σ effectiveCapacity over engaging layers — expected kills in one window.
+  // Reduces to the old integer intercept capacity when every pk = 1.
   interceptCapacity: number;
-  // Smallest synchronized salvo that lands ≥1 missile on the hull.
+  // Smallest synchronized salvo whose saturationProbability ≥ confidence.
   minSaturatingSalvo: number;
   layerCapacities: LayerCapacity[];
 };
@@ -320,31 +346,55 @@ export function clusterBearings(bearings: number[]): BearingCluster[] {
     .map(([centerDeg, count]) => ({ centerDeg, count }));
 }
 
-// Deviation #4 (sliding window from first arrival in each layer) and
-// Deviation #5 (envelope check at arrival, range ≈ 0).
-export function computeLayerBreakdown(
-  salvos: Salvo[],
-  arrivalTimes: number[],
-  layers: DefenseLayer[],
-): LayerResult[] {
-  // Expand salvos into per-missile arrival times.
-  let pool: number[] = [];
-  for (let i = 0; i < salvos.length; i++) {
-    const at = arrivalTimes[i] ?? 0;
-    for (let j = 0; j < salvos[i].count; j++) pool.push(at);
-  }
-  pool.sort((a, b) => a - b);
+const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
-  const results: LayerResult[] = [];
+// A weapon system engages iff its envelope contains the arrival range ≈ 0
+// (deviation #5). minR/maxR default to ±∞.
+function systemEngages(ws: WeaponSystem): boolean {
+  const minR = ws.minRangeNm ?? Number.NEGATIVE_INFINITY;
+  const maxR = ws.maxRangeNm ?? Number.POSITIVE_INFINITY;
+  return minR <= 0 && maxR >= 0;
+}
+
+// One window's worth of shots for a layer: each engaging system contributes
+// channels × engagementsPerChannel shots tagged with its pk. Sorted pk-desc so
+// allocation deals the best shots first. Counts are floored & clamped ≥ 0 so a
+// malformed system never produces negative or fractional shots.
+function layerShots(layer: DefenseLayer): number[] {
+  const shots: number[] = [];
+  for (const ws of layer.weaponSystems) {
+    if (!systemEngages(ws)) continue;
+    const n =
+      Math.max(0, Math.floor(ws.channels)) *
+      Math.max(0, Math.floor(ws.engagementsPerChannel));
+    const pk = clamp01(ws.pk);
+    for (let i = 0; i < n; i++) shots.push(pk);
+  }
+  return shots.sort((a, b) => b - a);
+}
+
+type SimResult = { layerResults: LayerResult[]; finalSurvival: number[] };
+
+// Core probabilistic defense simulation. Each missile carries a survival
+// probability q (1 = certain hit on hull). Layers apply in order; within a
+// layer the still-live missiles (q > 0) are grouped into sliding windows
+// (deviation #4) and each window is dealt the layer's shot pool, one shot per
+// live missile per pass (even spread — the defender can't tell which contacts
+// are already dead). A shot of probability p multiplies that missile's q by
+// (1 − p). At pk = 1 this reduces exactly to the old integer model: an engaged
+// missile's q snaps to 0, so per-layer expected counts are whole numbers.
+function simulateDefense(arrivalPool: number[], layers: DefenseLayer[]): SimResult {
+  const n = arrivalPool.length;
+  const survival = new Array<number>(n).fill(1);
+  const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0);
+  const layerResults: LayerResult[] = [];
 
   for (const layer of layers) {
-    const incoming = pool.length;
-    const minR = layer.minRangeNm ?? Number.NEGATIVE_INFINITY;
-    const maxR = layer.maxRangeNm ?? Number.POSITIVE_INFINITY;
-    const engages = minR <= 0 && maxR >= 0;
+    const incoming = sum(survival);
+    const shots = layerShots(layer);
 
-    if (!engages || incoming === 0) {
-      results.push({
+    if (shots.length === 0 || incoming === 0) {
+      layerResults.push({
         layerName: layer.name,
         incoming,
         intercepted: 0,
@@ -353,51 +403,103 @@ export function computeLayerBreakdown(
       continue;
     }
 
-    const survivors: number[] = [];
-    let intercepted = 0;
+    // Live missiles, ordered by arrival, for windowing.
+    const live: number[] = [];
+    for (let i = 0; i < n; i++) if (survival[i] > 0) live.push(i);
+    live.sort((a, b) => arrivalPool[a] - arrivalPool[b]);
+
     let i = 0;
-    while (i < pool.length) {
-      const windowStart = pool[i];
+    while (i < live.length) {
+      const windowStart = arrivalPool[live[i]];
       const windowEnd = windowStart + layer.windowS;
-      const inWindow: number[] = [];
-      while (i < pool.length && pool[i] < windowEnd) {
-        inWindow.push(pool[i]);
+      const windowIdx: number[] = [];
+      while (i < live.length && arrivalPool[live[i]] < windowEnd) {
+        windowIdx.push(live[i]);
         i++;
       }
-      const killed = Math.min(inWindow.length, layer.interceptsPerWindow);
-      intercepted += killed;
-      for (let k = killed; k < inWindow.length; k++) survivors.push(inWindow[k]);
+      // Deal shots round-robin: pass after pass, one per missile.
+      let s = 0;
+      while (s < shots.length) {
+        for (let k = 0; k < windowIdx.length && s < shots.length; k++) {
+          survival[windowIdx[k]] *= 1 - shots[s];
+          s++;
+        }
+      }
     }
 
-    results.push({
+    const leakers = sum(survival);
+    layerResults.push({
       layerName: layer.name,
       incoming,
-      intercepted,
-      leakers: survivors.length,
+      intercepted: incoming - leakers,
+      leakers,
     });
-    pool = survivors;
   }
 
-  return results;
+  return { layerResults, finalSurvival: survival };
 }
 
-// Inverse of computeLayerBreakdown under perfect synchronization.
-// This whole app drives every salvo to one synchronizedArrivalTimeS, so in the
-// limiting (best-case saturation) tactic all missiles fall inside a single
-// sliding window at every layer. Each engaging layer then removes at most
-// `interceptsPerWindow`, so the smallest salvo that puts ≥1 missile on the hull
-// is (Σ engaging interceptsPerWindow) + 1. Deviation #5: a layer engages iff
-// 0 ∈ [minRangeNm, maxRangeNm] (envelope checked at arrival, range ≈ 0).
-export function solveInverseSaturation(target: TargetShip): InverseSaturationResult {
+function expandPool(salvos: Salvo[], arrivalTimes: number[]): number[] {
+  const pool: number[] = [];
+  for (let i = 0; i < salvos.length; i++) {
+    const at = arrivalTimes[i] ?? 0;
+    for (let j = 0; j < salvos[i].count; j++) pool.push(at);
+  }
+  return pool;
+}
+
+// P(at least one missile reaches the hull) given per-missile survival probs.
+function leakProbability(survival: number[]): number {
+  let allKilled = 1;
+  for (const q of survival) allKilled *= 1 - q;
+  return 1 - allKilled;
+}
+
+// Deviation #4 (sliding window from first arrival in each layer) and
+// Deviation #5 (envelope check at arrival, range ≈ 0).
+export function computeLayerBreakdown(
+  salvos: Salvo[],
+  arrivalTimes: number[],
+  layers: DefenseLayer[],
+): LayerResult[] {
+  return simulateDefense(expandPool(salvos, arrivalTimes), layers).layerResults;
+}
+
+// Inverse of the forward model under perfect synchronization. The app drives
+// every salvo to one synchronizedArrivalTimeS, so all missiles fall in a single
+// window at every layer. minSaturatingSalvo is the smallest synchronized salvo
+// whose leak probability reaches `confidence`, found by evaluating the forward
+// per-window model at increasing N (bounded: once N exceeds the total shot
+// count some missile is guaranteed unengaged, forcing leak probability to 1).
+// At pk = 1 this collapses to the Phase-1 result, (Σ engaging shots) + 1.
+export function solveInverseSaturation(
+  target: TargetShip,
+  confidence: number = DEFAULT_SATURATION_CONFIDENCE,
+): InverseSaturationResult {
+  const conf = clamp01(confidence);
   const layerCapacities: LayerCapacity[] = target.defenseLayers.map((layer) => {
-    const minR = layer.minRangeNm ?? Number.NEGATIVE_INFINITY;
-    const maxR = layer.maxRangeNm ?? Number.POSITIVE_INFINITY;
-    const engages = minR <= 0 && maxR >= 0;
+    const systems: WeaponSystemCapacity[] = layer.weaponSystems.map((ws) => {
+      const engages = systemEngages(ws);
+      const shots = engages
+        ? Math.max(0, Math.floor(ws.channels)) *
+          Math.max(0, Math.floor(ws.engagementsPerChannel))
+        : 0;
+      return {
+        systemName: ws.name,
+        guidance: ws.guidance,
+        engages,
+        shots,
+        pk: clamp01(ws.pk),
+      };
+    });
+    const shots = systems.reduce((sum, s) => sum + s.shots, 0);
+    const effectiveCapacity = systems.reduce((sum, s) => sum + s.shots * s.pk, 0);
     return {
       layerName: layer.name,
-      engages,
-      interceptsPerWindow: layer.interceptsPerWindow,
-      effectiveCapacity: engages ? Math.max(0, layer.interceptsPerWindow) : 0,
+      engages: systems.some((s) => s.engages),
+      shots,
+      effectiveCapacity,
+      systems,
     };
   });
 
@@ -405,11 +507,24 @@ export function solveInverseSaturation(target: TargetShip): InverseSaturationRes
     (sum, l) => sum + l.effectiveCapacity,
     0,
   );
+  const totalShots = layerCapacities.reduce((sum, l) => sum + l.shots, 0);
+
+  // Search 1..totalShots+1; the upper bound always saturates (pigeonhole).
+  let minSaturatingSalvo = totalShots + 1;
+  for (let nSalvo = 1; nSalvo <= totalShots + 1; nSalvo++) {
+    const pool = new Array<number>(nSalvo).fill(0);
+    const { finalSurvival } = simulateDefense(pool, target.defenseLayers);
+    if (leakProbability(finalSurvival) >= conf) {
+      minSaturatingSalvo = nSalvo;
+      break;
+    }
+  }
 
   return {
     targetId: target.id,
+    confidence: conf,
     interceptCapacity,
-    minSaturatingSalvo: interceptCapacity + 1,
+    minSaturatingSalvo,
     layerCapacities,
   };
 }
@@ -418,6 +533,7 @@ export function computeSaturation(
   groupResult: GroupResult,
   salvos: Salvo[],
   target: TargetShip,
+  confidence: number = DEFAULT_SATURATION_CONFIDENCE,
 ): SaturationResult {
   const bearings: number[] = [];
   let totalIncoming = 0;
@@ -434,22 +550,20 @@ export function computeSaturation(
   }
   const arrivalTimes = salvos.map((s) => arrivalBySalvoId.get(s.id) ?? 0);
 
-  const layerResults = computeLayerBreakdown(
-    salvos,
-    arrivalTimes,
+  const { layerResults, finalSurvival } = simulateDefense(
+    expandPool(salvos, arrivalTimes),
     target.defenseLayers,
   );
 
-  const hullImpacts =
-    layerResults.length === 0
-      ? totalIncoming
-      : layerResults[layerResults.length - 1].leakers;
+  const hullImpacts = finalSurvival.reduce((a, b) => a + b, 0);
+  const saturationProbability = leakProbability(finalSurvival);
 
   return {
     totalIncoming,
     bearingClusters,
     layerResults,
     hullImpacts,
-    saturated: hullImpacts > 0,
+    saturationProbability,
+    saturated: saturationProbability >= clamp01(confidence),
   };
 }

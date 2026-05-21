@@ -1,12 +1,17 @@
 import { useRef, useState } from 'react';
 import { useScenario } from '../hooks/useScenario';
-import type { DefenseLayer } from '../types';
+import type { DefenseLayer, GuidanceType, WeaponSystem } from '../types';
 
 type Props = {
   scenarioId: string;
   targetId: string;
   layers: DefenseLayer[];
 };
+
+const NUM_CLS =
+  'w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20';
+
+const GUIDANCE_OPTIONS: GuidanceType[] = ['SARH', 'ARH', 'gun'];
 
 export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
   const { dispatch } = useScenario();
@@ -16,6 +21,9 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
 
   const update = (layerId: string, patch: Partial<DefenseLayer>) =>
     dispatch({ type: 'UPDATE_DEFENSE_LAYER', scenarioId, targetId, layerId, patch });
+
+  const updateSystem = (layerId: string, systemId: string, patch: Partial<WeaponSystem>) =>
+    dispatch({ type: 'UPDATE_WEAPON_SYSTEM', scenarioId, targetId, layerId, systemId, patch });
 
   const computeDropIndex = (clientY: number): number => {
     const list = listRef.current;
@@ -120,19 +128,7 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                   Delete
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-2 px-3 pb-2 text-xs text-textSecondary">
-                <label className="flex items-center gap-1">
-                  Intercepts/win
-                  <input
-                    type="number"
-                    min={0}
-                    value={layer.interceptsPerWindow}
-                    onChange={(e) =>
-                      update(layer.id, { interceptsPerWindow: Number(e.target.value) })
-                    }
-                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
-                  />
-                </label>
+              <div className="space-y-2 px-3 pb-2 text-xs text-textSecondary">
                 <label className="flex items-center gap-1">
                   Window (s)
                   <input
@@ -140,42 +136,157 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                     min={0}
                     step={0.5}
                     value={layer.windowS}
-                    onChange={(e) =>
-                      update(layer.id, { windowS: Number(e.target.value) })
-                    }
-                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
+                    onChange={(e) => update(layer.id, { windowS: Number(e.target.value) })}
+                    className={`ml-auto ${NUM_CLS}`}
                   />
                 </label>
-                <label className="flex items-center gap-1">
-                  Min range (nm)
-                  <input
-                    type="number"
-                    min={0}
-                    value={layer.minRangeNm ?? ''}
-                    placeholder="—"
-                    onChange={(e) =>
-                      update(layer.id, {
-                        minRangeNm: e.target.value === '' ? undefined : Number(e.target.value),
+
+                <div className="flex items-center justify-between">
+                  <span className="font-bold uppercase tracking-wider text-textSecondary/80">
+                    Weapon systems
+                  </span>
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: 'ADD_WEAPON_SYSTEM',
+                        scenarioId,
+                        targetId,
+                        layerId: layer.id,
                       })
                     }
-                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
-                  />
-                </label>
-                <label className="flex items-center gap-1">
-                  Max range (nm)
-                  <input
-                    type="number"
-                    min={0}
-                    value={layer.maxRangeNm ?? ''}
-                    placeholder="—"
-                    onChange={(e) =>
-                      update(layer.id, {
-                        maxRangeNm: e.target.value === '' ? undefined : Number(e.target.value),
-                      })
-                    }
-                    className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
-                  />
-                </label>
+                    className="rounded border border-panelBorder px-2 py-0.5 font-mono uppercase tracking-wider text-textSecondary hover:border-skyAccent/50 hover:text-textPrimary"
+                  >
+                    + System
+                  </button>
+                </div>
+
+                {layer.weaponSystems.length === 0 ? (
+                  <p className="italic text-textSecondary/70">
+                    No weapon systems — this layer intercepts nothing.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {layer.weaponSystems.map((ws) => (
+                      <li
+                        key={ws.id}
+                        className="space-y-1.5 rounded border border-panelBorder/70 bg-navy/30 p-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={ws.name}
+                            onChange={(e) => updateSystem(layer.id, ws.id, { name: e.target.value })}
+                            className="flex-1 bg-transparent text-textPrimary outline-none"
+                          />
+                          <select
+                            value={ws.guidance}
+                            onChange={(e) =>
+                              updateSystem(layer.id, ws.id, {
+                                guidance: e.target.value as GuidanceType,
+                              })
+                            }
+                            className="rounded border border-panelBorder bg-navy px-1 py-0.5 font-mono text-textPrimary outline-none focus:border-skyAccent"
+                          >
+                            {GUIDANCE_OPTIONS.map((g) => (
+                              <option key={g} value={g}>
+                                {g}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() =>
+                              dispatch({
+                                type: 'DELETE_WEAPON_SYSTEM',
+                                scenarioId,
+                                targetId,
+                                layerId: layer.id,
+                                systemId: ws.id,
+                              })
+                            }
+                            className="text-redAccent hover:underline"
+                            title="Remove weapon system"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <label className="flex flex-col gap-0.5">
+                            <span className="text-[10px] uppercase tracking-wider">Channels</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={ws.channels}
+                              onChange={(e) =>
+                                updateSystem(layer.id, ws.id, { channels: Number(e.target.value) })
+                              }
+                              className={`w-full ${NUM_CLS}`}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-0.5">
+                            <span className="text-[10px] uppercase tracking-wider">Eng/ch</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={ws.engagementsPerChannel}
+                              onChange={(e) =>
+                                updateSystem(layer.id, ws.id, {
+                                  engagementsPerChannel: Number(e.target.value),
+                                })
+                              }
+                              className={`w-full ${NUM_CLS}`}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-0.5">
+                            <span className="text-[10px] uppercase tracking-wider">Pk</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={ws.pk}
+                              onChange={(e) =>
+                                updateSystem(layer.id, ws.id, { pk: Number(e.target.value) })
+                              }
+                              className={`w-full ${NUM_CLS}`}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-0.5">
+                            <span className="text-[10px] uppercase tracking-wider">Min nm</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={ws.minRangeNm ?? ''}
+                              placeholder="—"
+                              onChange={(e) =>
+                                updateSystem(layer.id, ws.id, {
+                                  minRangeNm:
+                                    e.target.value === '' ? undefined : Number(e.target.value),
+                                })
+                              }
+                              className={`w-full ${NUM_CLS}`}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-0.5">
+                            <span className="text-[10px] uppercase tracking-wider">Max nm</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={ws.maxRangeNm ?? ''}
+                              placeholder="—"
+                              onChange={(e) =>
+                                updateSystem(layer.id, ws.id, {
+                                  maxRangeNm:
+                                    e.target.value === '' ? undefined : Number(e.target.value),
+                                })
+                              }
+                              className={`w-full ${NUM_CLS}`}
+                            />
+                          </label>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </li>
           ))}

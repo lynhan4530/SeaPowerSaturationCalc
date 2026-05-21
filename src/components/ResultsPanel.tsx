@@ -27,6 +27,10 @@ type ShipStatus = {
 const STATUS_BADGE_BASE =
   'shrink-0 rounded-sm border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest';
 
+// Whole numbers print clean; fractional expected values get one decimal.
+const fmtNum = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+const fmtPct = (p: number): string => `${(p * 100).toFixed(p >= 0.995 || p === 0 ? 0 : 1)}%`;
+
 function shipStatus(r: InterceptResult): ShipStatus {
   if (!r.converged) {
     return {
@@ -73,6 +77,28 @@ export function ResultsPanel() {
         <h2 className="text-sm font-bold uppercase tracking-widest text-textSecondary">
           Results
         </h2>
+        <div className="flex items-center gap-3">
+        <label className="flex items-center gap-2 text-xs text-textSecondary" title="Leak-probability threshold for the SATURATED verdict and the saturation threshold figure">
+          Confidence
+          <input
+            type="number"
+            min={1}
+            max={100}
+            step={5}
+            value={Math.round(activeScenario.saturationConfidence * 100)}
+            onChange={(e) => {
+              const pct = Number(e.target.value);
+              const clamped = Math.min(100, Math.max(1, Number.isFinite(pct) ? pct : 50));
+              dispatch({
+                type: 'UPDATE_SCENARIO',
+                id: activeScenario.id,
+                patch: { saturationConfidence: clamped / 100 },
+              });
+            }}
+            className="w-16 rounded border border-panelBorder bg-navy px-2 py-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
+          />
+          <span className="font-mono">%</span>
+        </label>
         <label className="flex items-center gap-2 text-xs text-textSecondary">
           H-hour
           <input
@@ -92,6 +118,7 @@ export function ResultsPanel() {
             }`}
           />
         </label>
+        </div>
       </header>
       {!hHourValid && (
         <p className="text-xs text-redAccent">H-hour must be HH:MM:SS (e.g. 14:30:00).</p>
@@ -165,12 +192,15 @@ function TargetResultSection({
 
   const saturation: SaturationResult | null = useMemo(() => {
     if (!group) return null;
-    return computeSaturation(group, salvos, target);
-  }, [group, salvos, target]);
+    return computeSaturation(group, salvos, target, scenario.saturationConfidence);
+  }, [group, salvos, target, scenario.saturationConfidence]);
 
   // Inverse solver — depends only on the target's defenses, so it's a planning
   // figure that's meaningful even before any salvo is assigned.
-  const inverse = useMemo(() => solveInverseSaturation(target), [target]);
+  const inverse = useMemo(
+    () => solveInverseSaturation(target, scenario.saturationConfidence),
+    [target, scenario.saturationConfidence],
+  );
   const plannedIncoming = useMemo(
     () => salvos.reduce((sum, sv) => sum + sv.count, 0),
     [salvos],
@@ -286,16 +316,16 @@ function SaturationThresholdCard({
         </span>
       </div>
       <p className="mt-1 font-mono text-[11px] text-textSecondary">
-        Min synchronized arrivals to land 1 missile on the hull
+        Min synchronized arrivals for ≥{fmtPct(inverse.confidence)} leak probability
       </p>
 
       <p className="mt-2 font-mono text-[11px] text-textSecondary">
-        Defensive capacity:{' '}
-        <span className="text-textPrimary">{inverse.interceptCapacity}</span>
+        Expected intercept capacity:{' '}
+        <span className="text-textPrimary">{fmtNum(inverse.interceptCapacity)}</span>
         {engaging.length > 0 && (
           <>
             {' '}
-            ({engaging.map((l) => `${l.layerName} ×${l.effectiveCapacity}`).join(' + ')})
+            ({engaging.map((l) => `${l.layerName} ×${fmtNum(l.effectiveCapacity)}`).join(' + ')})
           </>
         )}
       </p>
@@ -554,24 +584,24 @@ function SaturationSection({
                 saturation.layerResults.map((l, i) => (
                   <tr key={`${l.layerName}-${i}`} className="text-textPrimary odd:bg-surfaceAlt/20">
                     <td className="px-2 py-1">{l.layerName}</td>
-                    <td className="px-2 py-1 text-right font-mono">{l.incoming}</td>
+                    <td className="px-2 py-1 text-right font-mono">{fmtNum(l.incoming)}</td>
                     <td className="px-2 py-1 text-right font-mono text-greenAccent">
-                      {l.intercepted}
+                      {fmtNum(l.intercepted)}
                     </td>
-                    <td className="px-2 py-1 text-right font-mono">{l.leakers}</td>
+                    <td className="px-2 py-1 text-right font-mono">{fmtNum(l.leakers)}</td>
                   </tr>
                 ))
               )}
               <tr className="border-t border-panelBorder bg-surfaceAlt/40 font-bold uppercase tracking-wider text-textPrimary">
                 <td className="px-2 py-1.5" colSpan={3}>
-                  Hull impacts
+                  Expected hull impacts
                 </td>
                 <td
                   className={`px-2 py-1.5 text-right font-mono ${
                     saturation.hullImpacts > 0 ? 'text-redAccent' : 'text-greenAccent'
                   }`}
                 >
-                  {saturation.hullImpacts}
+                  {fmtNum(saturation.hullImpacts)}
                 </td>
               </tr>
             </tbody>
@@ -625,19 +655,20 @@ function CompassRose({
 }
 
 function VerdictCard({ saturation }: { saturation: SaturationResult }) {
+  const leak = fmtPct(saturation.saturationProbability);
+  const expected = fmtNum(saturation.hullImpacts);
   if (saturation.saturated) {
     return (
       <div className="flex items-center gap-2 rounded-sm border border-redAccent/50 bg-redAccent/15 px-3 py-2 font-mono text-sm font-bold uppercase tracking-widest text-redAccent shadow-[0_0_12px_rgba(239,68,68,0.3)]">
         <span className="h-2 w-2 animate-pulse rounded-full bg-redAccent shadow-[0_0_8px_#EF4444]" />
-        SATURATED &mdash; {saturation.hullImpacts} missile
-        {saturation.hullImpacts === 1 ? '' : 's'} reach hull
+        SATURATED &mdash; {leak} leak probability ({expected} expected on hull)
       </div>
     );
   }
   return (
     <div className="flex items-center gap-2 rounded-sm border border-greenAccent/50 bg-greenAccent/15 px-3 py-2 font-mono text-sm font-bold uppercase tracking-widest text-greenAccent shadow-[0_0_12px_rgba(16,185,129,0.25)]">
       <span className="h-2 w-2 rounded-full bg-greenAccent shadow-[0_0_8px_#10B981]" />
-      DEFENDED &mdash; 0 missiles reach hull
+      DEFENDED &mdash; {leak} leak probability ({expected} expected on hull)
     </div>
   );
 }

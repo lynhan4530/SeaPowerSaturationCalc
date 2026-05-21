@@ -43,13 +43,20 @@ for the full plan. The original six stages are **all shipped**:
   `computeLayerBreakdown`: under synchronized arrival,
   `minSaturatingSalvo = Σ(interceptsPerWindow over engaging layers) + 1`. Surfaced
   as `SaturationThresholdCard` in `ResultsPanel`. Tests TC-41..46.
-- **Channel-based defense + leak probability** ⬜ **designed, not built** — see
-  `PHASE2_DESIGN.md`. Replaces flat `interceptsPerWindow` with per-layer weapon
-  systems (`channels × engagementsPerChannel`, per-system `pk`) and turns the
-  binary SATURATED/DEFENDED verdict into a leak probability. Reduces exactly to
-  the current model at `pk = 1` (the migration anchor). Build is **on hold** —
-  do not start without explicit user go-ahead. The channel/pk data comes from the
-  handed-off `presets.json` parser (separate effort).
+- **Channel-based defense + leak probability** ✅ built on branch
+  `feat/channel-defense` (design in `PHASE2_DESIGN.md`). A `DefenseLayer` now holds
+  `weaponSystems: WeaponSystem[]` (each `{guidance, channels, engagementsPerChannel,
+  pk, min/maxRangeNm}`) instead of a flat `interceptsPerWindow`. Per window a layer
+  fires `Σ engaging channels × engagementsPerChannel` shots, dealt one per live
+  missile per pass (best-pk first); each missile carries a survival probability
+  `q ×= (1 − pk)`. Verdict is now probabilistic: `hullImpacts = Σ q`,
+  `saturationProbability = 1 − Π(1 − q)`, `saturated = saturationProbability ≥
+  scenario.saturationConfidence` (default 0.5, editable in the Results header).
+  At `pk = 1` it reduces exactly to the old integer model — the migration anchor
+  (`storage.ts migrateScenario` synthesizes one pk=1 SARH system per legacy layer).
+  Tests TC-47..55. Channel/pk data will come from the handed-off `presets.json`
+  parser. **Branched off `feat/inverse-solver`**, so this branch also contains the
+  inverse solver (PR #1); merge order matters.
 - **`presets.json` parser** — handed off to a separate agent (Option B).
 
 ## PRD deviations (decided with user — do not silently revert)
@@ -63,7 +70,7 @@ The PRD has five internal inconsistencies that were resolved before coding.
 | 2 | Wait + reposition order | **Reposition first, then wait at firing point.** `fireTimeS = repositionTimeS + waitTimeS`. The PRD's stated `fireTimeS = repositionTimeS` and TC-09 wording need updating in Stage 3. |
 | 3 | Target closing the gap | **Pre-check before iterative loop.** If target is closing on a stationary ship, set `repositionTimeS = 0` and `waitTimeS = (range - missileMaxRange) / targetClosingSpeed * 3600`. Required for TC-10. |
 | 4 | Defense-layer window timing | **Sliding window from first arrival in each layer.** First arrival opens window 0; arrivals within `windowS` of it stay in window 0; first outside opens window 1. |
-| 5 | Defense-layer envelope check | **At arrival (range ≈ 0).** Layer engages iff `0 ∈ [minRangeNm ?? -∞, maxRangeNm ?? +∞]`. Note: this makes `maxRangeNm` effectively useless for any positive value. TC-24 needs rewriting: 95nm salvo, SM-2 max 80nm → SM-2 **engages** (0 < 80). |
+| 5 | Defense-layer envelope check | **At arrival (range ≈ 0).** Engages iff `0 ∈ [minRangeNm ?? -∞, maxRangeNm ?? +∞]`. Note: this makes `maxRangeNm` effectively useless for any positive value. TC-24 needs rewriting: 95nm salvo, SM-2 max 80nm → SM-2 **engages** (0 < 80). Post-Phase 2 this check is **per weapon system**, not per layer. |
 
 ## File structure
 
@@ -75,9 +82,9 @@ src/
     useScenario.tsx     — reducer + Context + 50-state history stack + persistence
   lib/
     geo.ts              — projectPosition, bearingTo, distance (pure, no React)
-    storage.ts          — localStorage I/O, export/import with rename-on-collision
-    calc.ts             — solver, group sync, clustering, layer breakdown, inverse solver
-    __tests__/calc.test.ts — Vitest suite (TC-01..46)
+    storage.ts          — localStorage I/O, export/import, Phase 2 layer migration
+    calc.ts             — solver, group sync, clustering, probabilistic defense sim, inverse solver
+    __tests__/calc.test.ts — Vitest suite (TC-01..55)
   components/
     Header.tsx, LeftPanel.tsx, RightPanel.tsx
     CompassInput.tsx, DefenseLayerEditor.tsx, MissileLibrary.tsx
@@ -91,7 +98,7 @@ src/
 - **No `any`** anywhere in TypeScript.
 - `calc.ts` and `geo.ts` are **pure** — zero React/DOM imports.
 - All entity ids use `crypto.randomUUID()`.
-- New scenarios default: `simultaneityToleranceS: 10`, `repositionWarningThresholdS: 3600`.
+- New scenarios default: `simultaneityToleranceS: 10`, `repositionWarningThresholdS: 3600`, `saturationConfidence: 0.5`.
 - Bearings normalized to [0, 360); inputs clamped on edit.
 - Numbers shown to user: 1 decimal for nm/kts, whole seconds for time.
 - Custom Tailwind colors: `navy`, `panel`, `panelBorder`, `textPrimary`, `textSecondary`, `amberAccent`, `redAccent`, `greenAccent`. Use those instead of raw hex.
