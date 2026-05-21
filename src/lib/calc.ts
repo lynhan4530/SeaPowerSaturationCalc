@@ -52,6 +52,23 @@ export type SaturationResult = {
   saturated: boolean;
 };
 
+export type LayerCapacity = {
+  layerName: string;
+  engages: boolean;
+  interceptsPerWindow: number;
+  // Counts toward the saturation threshold only when the layer engages.
+  effectiveCapacity: number;
+};
+
+export type InverseSaturationResult = {
+  targetId: string;
+  // Σ effectiveCapacity over engaging layers — kills available in one window.
+  interceptCapacity: number;
+  // Smallest synchronized salvo that lands ≥1 missile on the hull.
+  minSaturatingSalvo: number;
+  layerCapacities: LayerCapacity[];
+};
+
 const MAX_ITERATIONS = 20;
 const CONVERGE_EPSILON_S = 1;
 
@@ -362,6 +379,39 @@ export function computeLayerBreakdown(
   }
 
   return results;
+}
+
+// Inverse of computeLayerBreakdown under perfect synchronization.
+// This whole app drives every salvo to one synchronizedArrivalTimeS, so in the
+// limiting (best-case saturation) tactic all missiles fall inside a single
+// sliding window at every layer. Each engaging layer then removes at most
+// `interceptsPerWindow`, so the smallest salvo that puts ≥1 missile on the hull
+// is (Σ engaging interceptsPerWindow) + 1. Deviation #5: a layer engages iff
+// 0 ∈ [minRangeNm, maxRangeNm] (envelope checked at arrival, range ≈ 0).
+export function solveInverseSaturation(target: TargetShip): InverseSaturationResult {
+  const layerCapacities: LayerCapacity[] = target.defenseLayers.map((layer) => {
+    const minR = layer.minRangeNm ?? Number.NEGATIVE_INFINITY;
+    const maxR = layer.maxRangeNm ?? Number.POSITIVE_INFINITY;
+    const engages = minR <= 0 && maxR >= 0;
+    return {
+      layerName: layer.name,
+      engages,
+      interceptsPerWindow: layer.interceptsPerWindow,
+      effectiveCapacity: engages ? Math.max(0, layer.interceptsPerWindow) : 0,
+    };
+  });
+
+  const interceptCapacity = layerCapacities.reduce(
+    (sum, l) => sum + l.effectiveCapacity,
+    0,
+  );
+
+  return {
+    targetId: target.id,
+    interceptCapacity,
+    minSaturatingSalvo: interceptCapacity + 1,
+    layerCapacities,
+  };
 }
 
 export function computeSaturation(
