@@ -26,13 +26,32 @@ export type FriendlyShip = {
   notes?: string;
 };
 
+// How a weapon system guides to the target. SARH needs an illuminator locked
+// through terminal homing (channels = illuminator WeaponChannels); ARH is
+// fire-and-forget; gun = CIWS. Guidance is descriptive metadata today — the
+// saturation math depends only on channels/engagements/pk.
+export type GuidanceType = 'SARH' | 'ARH' | 'gun';
+
+export type WeaponSystem = {
+  id: string;
+  name: string;
+  guidance: GuidanceType;
+  /** Simultaneous guidance channels. */
+  channels: number;
+  /** Re-engagements available to one channel within a single window. */
+  engagementsPerChannel: number;
+  /** Single-shot kill probability, 0..1. */
+  pk: number;
+  minRangeNm?: number;
+  maxRangeNm?: number;
+};
+
 export type DefenseLayer = {
   id: string;
   name: string;
-  interceptsPerWindow: number;
+  /** Saturation interval — see deviation #4. */
   windowS: number;
-  minRangeNm?: number;
-  maxRangeNm?: number;
+  weaponSystems: WeaponSystem[];
 };
 
 export type TargetShip = {
@@ -51,6 +70,8 @@ export type Scenario = {
   hHour?: string;
   simultaneityToleranceS: number;
   repositionWarningThresholdS: number;
+  /** Leak-probability threshold for the SATURATED verdict and inverse solver, 0..1. */
+  saturationConfidence: number;
   friendlyShips: FriendlyShip[];
   targetShips: TargetShip[];
 };

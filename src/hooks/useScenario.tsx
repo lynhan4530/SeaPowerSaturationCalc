@@ -22,6 +22,7 @@ import type {
   Salvo,
   Scenario,
   TargetShip,
+  WeaponSystem,
 } from '../types';
 
 const HISTORY_LIMIT = 50;
@@ -35,8 +36,22 @@ function makeBlankScenario(name = 'New Scenario'): Scenario {
     notes: '',
     simultaneityToleranceS: 10,
     repositionWarningThresholdS: 3600,
+    saturationConfidence: 0.5,
     friendlyShips: [],
     targetShips: [],
+  };
+}
+
+function makeWeaponSystem(name = 'Weapon system'): WeaponSystem {
+  return {
+    id: uuid(),
+    name,
+    guidance: 'SARH',
+    channels: 2,
+    engagementsPerChannel: 1,
+    pk: 0.8,
+    minRangeNm: undefined,
+    maxRangeNm: undefined,
   };
 }
 
@@ -97,6 +112,22 @@ type Action =
       scenarioId: string;
       targetId: string;
       orderedLayerIds: string[];
+    }
+  | { type: 'ADD_WEAPON_SYSTEM'; scenarioId: string; targetId: string; layerId: string }
+  | {
+      type: 'UPDATE_WEAPON_SYSTEM';
+      scenarioId: string;
+      targetId: string;
+      layerId: string;
+      systemId: string;
+      patch: Partial<WeaponSystem>;
+    }
+  | {
+      type: 'DELETE_WEAPON_SYSTEM';
+      scenarioId: string;
+      targetId: string;
+      layerId: string;
+      systemId: string;
     }
   | { type: 'ADD_MISSILE' }
   | { type: 'UPDATE_MISSILE'; id: string; patch: Partial<Missile> }
@@ -163,7 +194,11 @@ function deepCloneScenario(scenario: Scenario, newName: string): Scenario {
     targetShips: scenario.targetShips.map((t) => ({
       ...t,
       id: uuid(),
-      defenseLayers: t.defenseLayers.map((l) => ({ ...l, id: uuid() })),
+      defenseLayers: t.defenseLayers.map((l) => ({
+        ...l,
+        id: uuid(),
+        weaponSystems: l.weaponSystems.map((ws) => ({ ...ws, id: uuid() })),
+      })),
     })),
   };
 }
@@ -298,8 +333,8 @@ function applyAction(state: AppState, action: Action): AppState {
             {
               id: uuid(),
               name: `Layer ${t.defenseLayers.length + 1}`,
-              interceptsPerWindow: 2,
               windowS: 10,
+              weaponSystems: [makeWeaponSystem('Weapon system 1')],
             },
           ],
         })),
@@ -329,6 +364,54 @@ function applyAction(state: AppState, action: Action): AppState {
             .filter((l): l is DefenseLayer => Boolean(l));
           return { ...t, defenseLayers: reordered };
         }),
+      );
+
+    case 'ADD_WEAPON_SYSTEM':
+      return mapScenario(state, action.scenarioId, (s) =>
+        mapTarget(s, action.targetId, (t) => ({
+          ...t,
+          defenseLayers: t.defenseLayers.map((l) =>
+            l.id === action.layerId
+              ? {
+                  ...l,
+                  weaponSystems: [
+                    ...l.weaponSystems,
+                    makeWeaponSystem(`Weapon system ${l.weaponSystems.length + 1}`),
+                  ],
+                }
+              : l,
+          ),
+        })),
+      );
+    case 'UPDATE_WEAPON_SYSTEM':
+      return mapScenario(state, action.scenarioId, (s) =>
+        mapTarget(s, action.targetId, (t) => ({
+          ...t,
+          defenseLayers: t.defenseLayers.map((l) =>
+            l.id === action.layerId
+              ? {
+                  ...l,
+                  weaponSystems: l.weaponSystems.map((ws) =>
+                    ws.id === action.systemId ? { ...ws, ...action.patch } : ws,
+                  ),
+                }
+              : l,
+          ),
+        })),
+      );
+    case 'DELETE_WEAPON_SYSTEM':
+      return mapScenario(state, action.scenarioId, (s) =>
+        mapTarget(s, action.targetId, (t) => ({
+          ...t,
+          defenseLayers: t.defenseLayers.map((l) =>
+            l.id === action.layerId
+              ? {
+                  ...l,
+                  weaponSystems: l.weaponSystems.filter((ws) => ws.id !== action.systemId),
+                }
+              : l,
+          ),
+        })),
       );
 
     case 'ADD_MISSILE':

@@ -1,13 +1,116 @@
-import type { AppState, Missile, Scenario } from '../types';
+import type {
+  AppState,
+  DefenseLayer,
+  GuidanceType,
+  Missile,
+  Scenario,
+  WeaponSystem,
+} from '../types';
 
 const STORAGE_KEY = 'sps:state';
 const HISTORY_KEY = 'sps:history';
+
+const DEFAULT_SATURATION_CONFIDENCE = 0.5;
+const VALID_GUIDANCE: GuidanceType[] = ['SARH', 'ARH', 'gun'];
+
+// ───────── Phase 2 migration ─────────
+// Pre-Phase-2 scenarios stored a flat `interceptsPerWindow` (+ optional
+// min/maxRange) on each layer and no `saturationConfidence`. We upgrade those in
+// place on load/import: each legacy layer becomes one synthesized SARH weapon
+// system with pk = 1, which reproduces the old binary verdict exactly until the
+// user edits it. Raw JSON is read through loose shapes since its keys predate the
+// current types.
+
+type RawWeaponSystem = {
+  id?: string;
+  name?: string;
+  guidance?: string;
+  channels?: number;
+  engagementsPerChannel?: number;
+  pk?: number;
+  minRangeNm?: number;
+  maxRangeNm?: number;
+};
+
+type RawLayer = {
+  id?: string;
+  name?: string;
+  windowS?: number;
+  weaponSystems?: RawWeaponSystem[];
+  // legacy fields
+  interceptsPerWindow?: number;
+  minRangeNm?: number;
+  maxRangeNm?: number;
+};
+
+const uuid = (): string => crypto.randomUUID();
+
+function migrateWeaponSystem(raw: RawWeaponSystem): WeaponSystem {
+  const guidance: GuidanceType = VALID_GUIDANCE.includes(raw.guidance as GuidanceType)
+    ? (raw.guidance as GuidanceType)
+    : 'SARH';
+  return {
+    id: raw.id ?? uuid(),
+    name: raw.name ?? 'Weapon system',
+    guidance,
+    channels: raw.channels ?? 0,
+    engagementsPerChannel: raw.engagementsPerChannel ?? 1,
+    pk: raw.pk ?? 1,
+    minRangeNm: raw.minRangeNm,
+    maxRangeNm: raw.maxRangeNm,
+  };
+}
+
+function migrateLayer(raw: RawLayer): DefenseLayer {
+  const id = raw.id ?? uuid();
+  const name = raw.name ?? 'Layer';
+  const windowS = raw.windowS ?? 10;
+  if (raw.weaponSystems && raw.weaponSystems.length > 0) {
+    return { id, name, windowS, weaponSystems: raw.weaponSystems.map(migrateWeaponSystem) };
+  }
+  // Legacy flat layer → one SARH system, pk = 1 (behaviour-preserving anchor).
+  return {
+    id,
+    name,
+    windowS,
+    weaponSystems: [
+      {
+        id: uuid(),
+        name,
+        guidance: 'SARH',
+        channels: raw.interceptsPerWindow ?? 0,
+        engagementsPerChannel: 1,
+        pk: 1,
+        minRangeNm: raw.minRangeNm,
+        maxRangeNm: raw.maxRangeNm,
+      },
+    ],
+  };
+}
+
+export function migrateScenario(raw: Scenario): Scenario {
+  return {
+    ...raw,
+    saturationConfidence: raw.saturationConfidence ?? DEFAULT_SATURATION_CONFIDENCE,
+    targetShips: (raw.targetShips ?? []).map((t) => ({
+      ...t,
+      defenseLayers: (t.defenseLayers ?? []).map((l) => migrateLayer(l as RawLayer)),
+    })),
+  };
+}
+
+function migrateState(state: AppState): AppState {
+  return {
+    ...state,
+    scenarios: (state.scenarios ?? []).map(migrateScenario),
+  };
+}
 
 export function loadState(): AppState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as AppState;
+    return migrateState(JSON.parse(raw) as AppState);
   } catch {
     return null;
   }
@@ -119,16 +222,18 @@ export function importScenarios(
     idRemap.set(incoming.id, newMissile.id);
   }
 
-  const remappedScenarios: Scenario[] = incomingScenarios.map((s) => ({
-    ...s,
-    friendlyShips: s.friendlyShips.map((ship) => ({
-      ...ship,
-      salvos: ship.salvos.map((salvo) => ({
-        ...salvo,
-        missileId: idRemap.get(salvo.missileId) ?? salvo.missileId,
+  const remappedScenarios: Scenario[] = incomingScenarios.map((s) =>
+    migrateScenario({
+      ...s,
+      friendlyShips: s.friendlyShips.map((ship) => ({
+        ...ship,
+        salvos: ship.salvos.map((salvo) => ({
+          ...salvo,
+          missileId: idRemap.get(salvo.missileId) ?? salvo.missileId,
+        })),
       })),
-    })),
-  }));
+    }),
+  );
 
   return {
     scenarios: [...existing.scenarios, ...remappedScenarios],
