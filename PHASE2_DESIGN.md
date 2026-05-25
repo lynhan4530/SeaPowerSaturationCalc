@@ -152,10 +152,11 @@ New scenario default: `saturationConfidence: 0.5`.
    them later with no rewrite. *(Resolved — supplied by the IndexedDB presets via
    `vesselSync.ts`.)*
 
-**Update (post-launch):** a radar-horizon **detectability gate** now excludes a
-system from engaging a sea-skimmer it can't track (`horizon < minRange`); channels
-are not scaled — see CLAUDE.md "Radar Horizon SAM Range Capping" and deviation #6.
-`altitudeFt == null` ⇒ always detectable, so this design's math is unchanged for
+**Update (post-launch):** a **time-based radar-horizon model** now scales each
+system's shots by how much of a full channel salvo fits in the horizon-limited
+engagement window (`reach`, driven by attacker altitude + speed and the scenario
+radar height) — see CLAUDE.md "Radar Horizon SAM Range Capping" and deviation #6.
+`altitudeFt == null` ⇒ `reach = 1`, so this design's math is unchanged for
 high-altitude raids.
 
 ---

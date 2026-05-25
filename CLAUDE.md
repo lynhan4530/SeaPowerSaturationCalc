@@ -142,41 +142,52 @@ defense layer parameters) that were auto-populated from the game data.
 ### Radar Horizon SAM Range Capping ✅
 
 Sea-skimming missiles hide below the radar horizon, so a defender can't track them
-until they are close. This is modeled as a **detectability gate**, not a shot-count
-scaling: simultaneous guidance channels are *not* reduced by detection range (a
-long-range SAM still fires its full channel salvo at a sea-skimmer it can see, the
-same as against a high flier). The saturation danger therefore stays "salvo size
-vs channel count," with the horizon only excluding systems that can't get a track.
+until they are close — which compresses the time available to engage. This is a
+**time-based effectiveness model**: detection range is capped at the horizon, and
+each weapon system's shot count is scaled by how much of a full channel salvo fits
+in the engagement window the attacker's speed allows.
 
-> A proportional band-fraction model was tried first and rejected: dividing shots
-> by the full kinematic max range (e.g. an HHQ-9B's 260 nm) crushed a 16-channel
-> SAM to ~2 shots even though it has ~137 s to fire after detecting a 540 kt
-> Harpoon at the horizon. The gate is the physically honest choice for a single
-> synchronized arrival window.
+> Two earlier models were rejected. A **band-fraction** scale (`shots ×=
+> (horizon−min)/(max−min)`) crushed long-range SAMs because it divided by the full
+> 260 nm kinematic range. A pure **detectability gate** (full channels iff
+> `horizon ≥ minRange`) left radar height inert for any SAM with a small min range.
+> The time-based model is the lever that bites where it physically should — hard on
+> *fast* sea-skimmers, lightly on slow ones — and reduces to legacy for high fliers.
 
 **Physics:** `horizon_nm = 1.23 × (√H_radar + √H_missile)` (heights in feet) —
 `radarHorizonNm()` in `geo.ts` (pure).
 
-**Rule (`isDetectable` in `calc.ts`):** an attacker at `altitudeFt` is engageable
-by a system with inner edge `minRangeNm` iff `horizon ≥ minRangeNm` — it must
-cross the horizon *before* reaching the dead zone. Applied **per missile at deal
-time** inside `simulateDefense` (alongside the deviation-#5 launch-range check);
-`layerShots()` still produces the full `channels × engagementsPerChannel` pool.
+**Rule (`engagementReach` in `calc.ts`, 0..1):**
+- `altitudeFt == null` (high flier) ⇒ `1` — never horizon-limited (legacy).
+- else `effMax = min(maxRange, horizon)`; if `effMax ≤ minRange` ⇒ `0` (skimmer
+  pops over the horizon already inside the dead zone — excluded).
+- else `reach = clamp01(usableDepth / neededDepth)`, where
+  `usableDepth = effMax − minRange` and
+  `neededDepth = closingSpeed × engagementsPerChannel × cadence / 3600`
+  (the distance the attacker covers during one full channel salvo). Cadence is
+  guidance-typed: `REENGAGE_CADENCE_GUN_S = 3` for `gun`, else
+  `REENGAGE_CADENCE_SAM_S = 30`.
+
+Per window, each system contributes `round(channels × eng × avgReach)` shots
+(`windowShots`), allocated round-robin as before; the per-missile `isDetectable`
+launch/horizon gate still runs at deal time.
 
 **Data flow:**
-- Attacker altitude rides on the calc `Missile` as `altitudeFt?: number | null`.
-  `mapPresetToMissile` (`useDbLoader.tsx`) sets it from `seaSkimming` /
-  `seaSkimmingAltFt` (fallback `DEFAULT_SEA_SKIM_ALT_FT = 30`). **Non-sea-skimmers
-  and manual library missiles get `null` ⇒ no cap** (treated as high altitude).
+- Attacker altitude + speed ride on the calc `Missile` (`altitudeFt?: number |
+  null`, existing `speedKnots`). `mapPresetToMissile` (`useDbLoader.tsx`) sets
+  altitude from `seaSkimming` / `seaSkimmingAltFt` (fallback
+  `DEFAULT_SEA_SKIM_ALT_FT = 30`). **Non-sea-skimmers and manual library missiles
+  get `null` ⇒ no cap.**
 - Defender radar height is a **general scenario-level setting** —
   `Scenario.radarHeightFt` (default `50`), editable in the Results header
   ("Radar ht", ft), migrated by `storage.ts`. Threaded into `computeSaturation`
   and `simulateDefense`.
 
-**Reduces to legacy:** `altitudeFt == null` ⇒ `isDetectable` is always true ⇒ the
-shot pool and allocation are exactly the old model, so every prior test and saved
-scenario is unchanged. The inverse solver assumes a high-altitude attack (no
-gate). Tests TC-56..59.
+**Reduces to legacy:** `altitudeFt == null` ⇒ `reach = 1` ⇒ shot pool and
+allocation are exactly the old model, so every prior test and saved scenario is
+unchanged. The inverse solver assumes a high-altitude attack (`reach = 1`). Tests
+TC-56..59. *Note: radar height visibly moves results for **fast** sea-skimmers;
+slow ones (e.g. 540 kt Harpoon) keep ≈full channels, which is physically correct.*
 
 ---
 
@@ -193,7 +204,7 @@ PRD wording.**
 | 3 | Target closing the gap | **Pre-check before iterative loop.** If target is closing on a stationary ship, set `repositionTimeS = 0` and `waitTimeS = (range - missileMaxRange) / targetClosingSpeed * 3600`. Required for TC-10. |
 | 4 | Defense-layer window timing | **Sliding window from first arrival in each layer.** First arrival opens window 0; arrivals within `windowS` of it stay in window 0; first outside opens window 1. |
 | 5 | Defense-layer envelope check | **At launch range, not arrival range.** A weapon system engages iff `salvo.rangeToTargetNm >= ws.minRangeNm`. This replaced the original "check at range ≈ 0" rule which broke all SAMs with a positive minimum range. Post-Phase 2 this check is **per shot** inside `simulateDefense()`. |
-| 6 | Radar horizon cap | **Detectability gate, not channel scaling.** A system engages an attacker iff `horizon ≥ minRangeNm`, `horizon = 1.23×(√H_radar + √H_missile)`; channels are *not* scaled by detection range. `null` attacker altitude ⇒ always detectable ⇒ legacy behavior. Radar height is the scenario-level `radarHeightFt` (default 50). See the section above. |
+| 6 | Radar horizon cap | **Time-based effectiveness.** Detection capped at `horizon = 1.23×(√H_radar + √H_missile)`; each system's shots scale by `reach = clamp01(usableDepth / (closingSpeed × eng × cadence / 3600))`. `null` attacker altitude ⇒ `reach = 1` ⇒ legacy. Bites hard on fast sea-skimmers, lightly on slow ones. Radar height is the scenario-level `radarHeightFt` (default 50). See the section above. |
 
 ## File structure
 

@@ -739,19 +739,25 @@ describe('TC-56: radar horizon formula', () => {
   });
 });
 
-describe('TC-57: detectability gate — channels are not scaled by detection range', () => {
-  it('a detectable sea-skimmer still faces the SAM\'s full channels', () => {
-    // Harpoon @30ft, radar 50ft → horizon ≈ 15.43nm ≥ min 2 → engages fully.
-    const sm2 = sysLayer('SM-2', 30, [ws(1, 4, 1, { minRangeNm: 2, maxRangeNm: 90 })]);
-    const m = { ...missile('Harpoon', 500, 100), altitudeFt: 30 };
-    const s = salvo(m.id, 't', 4, 50, 0);
-    const result = computeLayerBreakdown([s], [0], [sm2], [m], 50);
-    expect(result[0]).toMatchObject({ incoming: 4, intercepted: 4, leakers: 0 });
+describe('TC-57: time-based — radar height is a lever against a FAST sea-skimmer', () => {
+  it('a Mach-4 skimmer: more interceptions with a taller radar mast', () => {
+    // SAM min2/max90, 10 ch, pk1. Fast skimmer @30ft, 2400 kt. Cadence 30s ⇒
+    // needed depth = 2400×30/3600 = 20nm.
+    //  radar 50ft  → horizon 15.43 → usable 13.43 → reach 0.67 → round(10×0.67)=7
+    //  radar 1000ft→ horizon 45.63 → usable >20 → reach 1     → 10
+    const sam = sysLayer('SAM', 30, [ws(1, 10, 1, { minRangeNm: 2, maxRangeNm: 90 })]);
+    const m = { ...missile('Fast ASM', 2400, 100), altitudeFt: 30 };
+    const s = salvo(m.id, 't', 10, 50, 0);
+    const low = computeLayerBreakdown([s], [0], [sam], [m], 50);
+    const high = computeLayerBreakdown([s], [0], [sam], [m], 1000);
+    expect(low[0].intercepted).toBe(7);
+    expect(high[0].intercepted).toBe(10);
+    expect(low[0].intercepted).toBeLessThan(high[0].intercepted);
   });
   it('a sea-skimmer below the system min range is excluded (horizon < min)', () => {
     // horizon ≈ 15.43nm < min 20 → never tracked → 0 shots → all leak.
     const sam = sysLayer('Long-min SAM', 30, [ws(1, 4, 1, { minRangeNm: 20, maxRangeNm: 90 })]);
-    const m = { ...missile('Harpoon', 500, 100), altitudeFt: 30 };
+    const m = { ...missile('Skimmer', 540, 100), altitudeFt: 30 };
     const s = salvo(m.id, 't', 4, 50, 0);
     const result = computeLayerBreakdown([s], [0], [sam], [m], 50);
     expect(result[0]).toMatchObject({ incoming: 4, intercepted: 0, leakers: 4 });
@@ -759,25 +765,23 @@ describe('TC-57: detectability gate — channels are not scaled by detection ran
 });
 
 describe('TC-58: high-altitude attacker is unaffected by the horizon', () => {
-  it('no altitude → full 4 shots, all intercepted', () => {
-    const sm2 = sysLayer('SM-2', 30, [ws(1, 4, 1, { minRangeNm: 2, maxRangeNm: 90 })]);
-    const m = missile('AS-4', 500, 100); // altitudeFt undefined → treated as high
+  it('null altitude → full channels regardless of speed or radar height', () => {
+    const sam = sysLayer('SAM', 30, [ws(1, 4, 1, { minRangeNm: 2, maxRangeNm: 90 })]);
+    const m = missile('AS-4', 2400, 100); // altitudeFt undefined → treated as high
     const s = salvo(m.id, 't', 4, 50, 0);
-    const result = computeLayerBreakdown([s], [0], [sm2], [m], 50);
+    const result = computeLayerBreakdown([s], [0], [sam], [m], 50);
     expect(result[0]).toMatchObject({ incoming: 4, intercepted: 4, leakers: 0 });
   });
 });
 
-describe('TC-59: scenario radar height lever restores a horizon-excluded SAM', () => {
-  it('min-20 SAM is excluded at 50 ft radar but engages at 400 ft', () => {
-    // horizon: 15.43nm @50ft (< 20) vs 31.34nm @400ft (≥ 20).
-    const sam = sysLayer('SAM', 30, [ws(1, 4, 1, { minRangeNm: 20, maxRangeNm: 90 })]);
-    const m = { ...missile('Harpoon', 500, 100), altitudeFt: 30 };
+describe('TC-59: a SLOW sea-skimmer is barely reduced (plenty of engagement time)', () => {
+  it('Harpoon @50ft, 540 kt → SAM keeps full channels even at 50 ft radar', () => {
+    // horizon 17.39nm, usable 15.39, needed depth 540×30/3600 = 4.5 ⇒ reach 1.
+    const sam = sysLayer('SAM', 30, [ws(1, 4, 1, { minRangeNm: 2, maxRangeNm: 90 })]);
+    const m = { ...missile('Harpoon', 540, 100), altitudeFt: 50 };
     const s = salvo(m.id, 't', 4, 50, 0);
-    const low = computeLayerBreakdown([s], [0], [sam], [m], 50);
-    const high = computeLayerBreakdown([s], [0], [sam], [m], 400);
-    expect(low[0].intercepted).toBe(0);
-    expect(high[0]).toMatchObject({ incoming: 4, intercepted: 4, leakers: 0 });
+    const result = computeLayerBreakdown([s], [0], [sam], [m], 50);
+    expect(result[0]).toMatchObject({ incoming: 4, intercepted: 4, leakers: 0 });
   });
 });
 

@@ -20,6 +20,12 @@ export const DEFAULT_RADAR_HEIGHT_FT = 50;
  *  preset gives no explicit altitude. */
 export const DEFAULT_SEA_SKIM_ALT_FT = 30;
 
+/** Re-engagement cadence (s): how long one channel takes per shot (launch → guide
+ *  → assess). Guns (CIWS) re-fire far faster than missile SAMs. Used to size how
+ *  many shots fit in a horizon-limited engagement window. */
+export const REENGAGE_CADENCE_SAM_S = 30;
+export const REENGAGE_CADENCE_GUN_S = 3;
+
 export type InterceptResult = {
   shipId: string;
   salvoId: string;
@@ -360,6 +366,8 @@ interface SimMissile {
   launchRangeNm: number;
   // Cruise altitude (ft); null = high altitude → no radar-horizon cap.
   altitudeFt: number | null;
+  // Closing speed (kts) — drives how much engagement time the horizon allows.
+  speedKnots: number;
 }
 
 // Radar-horizon detectability gate (deviation #6). An attacker at `altitudeFt`
@@ -378,6 +386,32 @@ function isDetectable(
   return radarHorizonNm(radarHeightFt, altitudeFt) >= minRangeNm;
 }
 
+function cadenceSeconds(guidance: GuidanceType): number {
+  return guidance === 'gun' ? REENGAGE_CADENCE_GUN_S : REENGAGE_CADENCE_SAM_S;
+}
+
+// Time-based effectiveness (0..1) of a weapon system against one attacker
+// (deviation #6). High-altitude attackers (altitudeFt null) are never horizon-
+// limited → 1 (legacy, full channels × engagements). For a sea-skimmer, detection
+// is capped at the radar horizon, so the usable engagement depth is
+// min(maxRange, horizon) − minRange; we compare it to the depth the attacker
+// covers during one full channel salvo (`channels` fire over `eng × cadence`
+// seconds, i.e. the depth = closingSpeed × eng × cadence). reach scales the shot
+// count: slow skimmers (lots of time) keep ≈1; fast skimmers / low radar cut it.
+function engagementReach(ws: WeaponSystem, m: SimMissile, radarHeightFt: number): number {
+  if (m.altitudeFt == null) return 1;
+  const minR = ws.minRangeNm ?? 0;
+  const maxR = ws.maxRangeNm ?? Number.POSITIVE_INFINITY;
+  const effMax = Math.min(maxR, radarHorizonNm(radarHeightFt, m.altitudeFt));
+  if (effMax <= minR) return 0; // over the horizon before reaching the envelope
+  const usableDepthNm = effMax - minR;
+  const speed = m.speedKnots > 0 ? m.speedKnots : 600;
+  const eng = Math.max(1, Math.floor(ws.engagementsPerChannel));
+  const neededDepthNm = (speed * cadenceSeconds(ws.guidance) * eng) / 3600;
+  if (neededDepthNm <= 0) return 1;
+  return clamp01(usableDepthNm / neededDepthNm);
+}
+
 // A weapon system engages if it has a valid range envelope (e.g. maxRange >= minRange).
 // For specific targets/salvos, the launch range checks are executed inside the simulation.
 function systemEngages(ws: WeaponSystem): boolean {
@@ -391,19 +425,28 @@ type Shot = {
   minRangeNm: number;
 };
 
-// One window's worth of shots for a layer: each engaging system contributes
-// channels × engagementsPerChannel shots tagged with its pk and minRangeNm.
-// Sorted pk-desc so allocation deals the best shots first. Counts are floored
-// & clamped ≥ 0 so a malformed system never produces negative or fractional
-// shots. Radar-horizon limiting is applied per-missile at deal time (see
-// `isDetectable`), not by scaling these counts.
-function layerShots(layer: DefenseLayer): Shot[] {
+// One window's worth of shots for a layer. Each engaging system contributes
+// round(channels × engagementsPerChannel × avgReach) shots tagged with its pk and
+// minRangeNm, where avgReach is the mean time-based effectiveness (see
+// `engagementReach`) over the window's missiles — 1 for high-altitude attackers,
+// so this reduces to channels × engagements (the legacy count). Sorted pk-desc so
+// allocation deals the best shots first; counts floored/clamped ≥ 0.
+function windowShots(
+  layer: DefenseLayer,
+  windowMissiles: SimMissile[],
+  radarHeightFt: number,
+): Shot[] {
   const shots: Shot[] = [];
   for (const ws of layer.weaponSystems) {
     if (!systemEngages(ws)) continue;
-    const n =
+    const base =
       Math.max(0, Math.floor(ws.channels)) *
       Math.max(0, Math.floor(ws.engagementsPerChannel));
+    if (base === 0 || windowMissiles.length === 0) continue;
+    const avgReach =
+      windowMissiles.reduce((acc, m) => acc + engagementReach(ws, m, radarHeightFt), 0) /
+      windowMissiles.length;
+    const n = Math.round(base * avgReach);
     const pk = clamp01(ws.pk);
     const minRangeNm = ws.minRangeNm ?? 0;
     for (let i = 0; i < n; i++) {
@@ -433,9 +476,8 @@ function simulateDefense(
 
   for (const layer of layers) {
     const incoming = sum(survival);
-    const shots = layerShots(layer);
 
-    if (shots.length === 0 || incoming === 0) {
+    if (incoming === 0) {
       layerResults.push({
         layerName: layer.name,
         incoming,
@@ -459,6 +501,14 @@ function simulateDefense(
         windowIdx.push(live[i]);
         i++;
       }
+      // Shot pool depends on this window's missiles: altitude/speed scale each
+      // system's count via the radar horizon (deviation #6).
+      const shots = windowShots(
+        layer,
+        windowIdx.map((idx) => arrivalPool[idx]),
+        radarHeightFt,
+      );
+      if (shots.length === 0) continue;
       // Deal shots round-robin: pass after pass, one per missile.
       let s = 0;
       while (s < shots.length) {
@@ -505,9 +555,11 @@ function expandPool(
   for (let i = 0; i < salvos.length; i++) {
     const at = arrivalTimes[i] ?? 0;
     const launchRangeNm = salvos[i].rangeToTargetNm;
-    const altitudeFt = missileById?.get(salvos[i].missileId)?.altitudeFt ?? null;
+    const preset = missileById?.get(salvos[i].missileId);
+    const altitudeFt = preset?.altitudeFt ?? null;
+    const speedKnots = preset?.speedKnots ?? 0;
     for (let j = 0; j < salvos[i].count; j++) {
-      pool.push({ arrivalTimeS: at, launchRangeNm, altitudeFt });
+      pool.push({ arrivalTimeS: at, launchRangeNm, altitudeFt, speedKnots });
     }
   }
   return pool;
@@ -584,11 +636,13 @@ export function solveInverseSaturation(
   // Search 1..totalShots+1; the upper bound always saturates (pigeonhole).
   let minSaturatingSalvo = totalShots + 1;
   for (let nSalvo = 1; nSalvo <= totalShots + 1; nSalvo++) {
-    // Inverse capacity assumes a standard high-altitude attack (no horizon cap).
+    // Inverse capacity assumes a standard high-altitude attack (no horizon cap),
+    // so altitudeFt is null ⇒ reach is 1 and speed is irrelevant.
     const pool: SimMissile[] = new Array(nSalvo).fill(null).map(() => ({
       arrivalTimeS: 0,
       launchRangeNm: Number.POSITIVE_INFINITY,
       altitudeFt: null,
+      speedKnots: 0,
     }));
     const { finalSurvival } = simulateDefense(pool, target.defenseLayers);
     if (leakProbability(finalSurvival) >= conf) {
