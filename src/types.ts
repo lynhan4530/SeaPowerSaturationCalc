@@ -23,6 +23,8 @@ export type FriendlyShip = {
   speedKnots: number;
   magazineSize: number;
   salvos: Salvo[];
+  presetId?: string;
+  loadout?: string;
   notes?: string;
 };
 
@@ -60,6 +62,8 @@ export type TargetShip = {
   speedKnots: number;
   headingDeg: number;
   defenseLayers: DefenseLayer[];
+  presetId?: string;
+  loadout?: string;
 };
 
 export type Scenario = {
@@ -81,3 +85,138 @@ export type AppState = {
   activeScenarioId: string | null;
   missileLibrary: Missile[];
 };
+
+/** --- Sea Power Game Preset Schema Types --- */
+
+export type SourceKind = 'base' | 'user' | 'mod';
+
+export type MissileRole = 'AAW' | 'ASuW' | 'ASW' | 'Other';
+
+export type DatabaseGuidanceType =
+  | 'None'
+  | 'IR'
+  | 'SARH'
+  | 'ARH'
+  | 'ARM'
+  | 'Laser'
+  | 'TV'
+  | 'ActiveSonar'
+  | 'PassiveSonar'
+  | 'WakeHoming'
+  | 'Unknown';
+
+export type SourceInfo = {
+  id: string;
+  kind: SourceKind;
+  name: string;
+  deprecated: boolean;
+  enabled: boolean;
+  order: number | null;
+};
+
+export type MissilePreset = {
+  id: string;
+  name: string;
+  nickname: string | null;
+  category: string | null;
+  role: MissileRole;
+  speedKnots: number | null;
+  maxRangeNm: number | null;
+  minRangeNm: number | null;
+  guidance: DatabaseGuidanceType;
+  seaSkimming: boolean;
+  seaSkimmingAltFt: number | null;
+  rcs: number | null;
+  seekerActiveRangeNm: number | null;
+  seekerPassiveRangeNm: number | null;
+  antiCountermeasuresBonus: number | null;
+  antiJammerBonus: number | null;
+  killProbability: number | null;
+  source: string;
+};
+
+export type LauncherPreset = {
+  id: string;
+  name: string;
+  kind: string;
+  reloadTimeS: number | null;
+  fireRatePerMin: number | null;
+  horizontalDegPerSec: number | null;
+  verticalDegPerSec: number | null;
+  missileInterceptChance: number | null;
+  aircraftInterceptChance: number | null;
+  source: string;
+};
+
+export type IlluminatorPreset = {
+  id: string;
+  name: string;
+  kind: string | null;
+  type: string | null;
+  mode: string | null;
+  weaponChannels: number | null;
+  targetChannels: number | null;
+  maxRangeKm: number | null;
+  maxRangeNm: number | null;
+  source: string;
+};
+
+export type ShipDirector = {
+  sensorSystem: string;
+  illuminatorId: string;
+  resolved: boolean;
+  type: string | null;
+  mode: string | null;
+  weaponChannels: number | null;
+  maxRangeNm: number | null;
+};
+
+export type ShipMount = {
+  index: number;
+  weaponType: string;
+  launcherId: string;
+  resolved: boolean;
+};
+
+export type ShipLoadoutEntry = {
+  ammoId: string;
+  count: number | null;
+  isMissile: boolean;
+};
+
+export type ShipLoadout = {
+  name: string;
+  ammo: ShipLoadoutEntry[];
+};
+
+export type ShipPreset = {
+  id: string;
+  name: string;
+  nickname: string | null;
+  category: string | null;
+  source: string;
+  unitType: string | null;
+  role: string | null;
+  displacementTons: number | null;
+  maxSpeedKnots: number | null;
+  weaponChannels: number | null;
+  directors: ShipDirector[];
+  mounts: ShipMount[];
+  loadouts: ShipLoadout[];
+};
+
+export type PresetsJson = {
+  generatedAt: string;
+  gameVersion: string | null;
+  resolvedPaths: {
+    gamePath: string;
+    modsPath: string | null;
+  };
+  sources: SourceInfo[];
+  missiles: MissilePreset[];
+  launchers: LauncherPreset[];
+  illuminators: IlluminatorPreset[];
+  ships: ShipPreset[];
+  stats: Record<string, number>;
+};
+

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useScenario, useUndoRedo } from '../hooks/useScenario';
 import { downloadScenarioJson, importScenarios } from '../lib/storage';
+import { useDbLoader } from '../hooks/useDbLoader';
 
 type Props = {
   onOpenMissileLibrary: () => void;
@@ -9,12 +10,14 @@ type Props = {
 export function Header({ onOpenMissileLibrary }: Props) {
   const { state, dispatch, activeScenario } = useScenario();
   const { undo, redo, canUndo, canRedo } = useUndoRedo();
+  const { syncDate, syncDatabase } = useDbLoader();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dbInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -61,6 +64,21 @@ export function Header({ onOpenMissileLibrary }: Props) {
       );
     } catch {
       setNotice('Import failed — file is not a valid scenario export.');
+    }
+  };
+
+  const onImportDbFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.missiles || !data.ships || !data.launchers || !data.illuminators) {
+        throw new Error('Missing database tables (missiles, ships, launchers, illuminators)');
+      }
+      await syncDatabase(data);
+      setNotice('Database synced successfully with custom game presets!');
+    } catch (err: any) {
+      console.error(err);
+      setNotice(`Sync failed — ${err.message || 'invalid presets.json format'}`);
     }
   };
 
@@ -202,6 +220,24 @@ export function Header({ onOpenMissileLibrary }: Props) {
           <button onClick={onOpenMissileLibrary} className={toolBtn}>
             Missile Library
           </button>
+          <button
+            onClick={() => dbInputRef.current?.click()}
+            className={`${toolBtn} border-amberAccent/30 hover:border-amberAccent text-amberAccent`}
+            title={syncDate ? `Database last synced: ${syncDate}` : 'Click to load custom mod presets.json'}
+          >
+            {syncDate ? 'Sync Game Data ✓' : 'Sync Game Data'}
+          </button>
+          <input
+            ref={dbInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void onImportDbFile(file);
+              e.target.value = '';
+            }}
+          />
         </div>
       </div>
 
