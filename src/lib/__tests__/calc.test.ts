@@ -739,16 +739,22 @@ describe('TC-56: radar horizon formula', () => {
   });
 });
 
-describe('TC-57: sea-skimmer cuts an area SAM down via the horizon', () => {
-  it('SM-2 (4ch, min2/max90) scaled to ~1 shot vs a 30 ft skimmer', () => {
+describe('TC-57: detectability gate — channels are not scaled by detection range', () => {
+  it('a detectable sea-skimmer still faces the SAM\'s full channels', () => {
+    // Harpoon @30ft, radar 50ft → horizon ≈ 15.43nm ≥ min 2 → engages fully.
     const sm2 = sysLayer('SM-2', 30, [ws(1, 4, 1, { minRangeNm: 2, maxRangeNm: 90 })]);
-    // coverage = (15.43 − 2)/(90 − 2) ≈ 0.153 → round(4 × 0.153) = 1 shot.
     const m = { ...missile('Harpoon', 500, 100), altitudeFt: 30 };
     const s = salvo(m.id, 't', 4, 50, 0);
     const result = computeLayerBreakdown([s], [0], [sm2], [m], 50);
-    expect(result[0].incoming).toBe(4);
-    expect(result[0].intercepted).toBe(1);
-    expect(result[0].leakers).toBe(3);
+    expect(result[0]).toMatchObject({ incoming: 4, intercepted: 4, leakers: 0 });
+  });
+  it('a sea-skimmer below the system min range is excluded (horizon < min)', () => {
+    // horizon ≈ 15.43nm < min 20 → never tracked → 0 shots → all leak.
+    const sam = sysLayer('Long-min SAM', 30, [ws(1, 4, 1, { minRangeNm: 20, maxRangeNm: 90 })]);
+    const m = { ...missile('Harpoon', 500, 100), altitudeFt: 30 };
+    const s = salvo(m.id, 't', 4, 50, 0);
+    const result = computeLayerBreakdown([s], [0], [sam], [m], 50);
+    expect(result[0]).toMatchObject({ incoming: 4, intercepted: 0, leakers: 4 });
   });
 });
 
@@ -762,13 +768,16 @@ describe('TC-58: high-altitude attacker is unaffected by the horizon', () => {
   });
 });
 
-describe('TC-59: short-range system within the horizon keeps full shots', () => {
-  it('CIWS (max 1.5 nm) unaffected vs a 30 ft skimmer', () => {
-    const ciws = sysLayer('CIWS', 5, [ws(1, 4, 1, { minRangeNm: 0, maxRangeNm: 1.5 })]);
+describe('TC-59: scenario radar height lever restores a horizon-excluded SAM', () => {
+  it('min-20 SAM is excluded at 50 ft radar but engages at 400 ft', () => {
+    // horizon: 15.43nm @50ft (< 20) vs 31.34nm @400ft (≥ 20).
+    const sam = sysLayer('SAM', 30, [ws(1, 4, 1, { minRangeNm: 20, maxRangeNm: 90 })]);
     const m = { ...missile('Harpoon', 500, 100), altitudeFt: 30 };
     const s = salvo(m.id, 't', 4, 50, 0);
-    const result = computeLayerBreakdown([s], [0], [ciws], [m], 50);
-    expect(result[0]).toMatchObject({ incoming: 4, intercepted: 4, leakers: 0 });
+    const low = computeLayerBreakdown([s], [0], [sam], [m], 50);
+    const high = computeLayerBreakdown([s], [0], [sam], [m], 400);
+    expect(low[0].intercepted).toBe(0);
+    expect(high[0]).toMatchObject({ incoming: 4, intercepted: 4, leakers: 0 });
   });
 });
 

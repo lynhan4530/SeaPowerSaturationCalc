@@ -362,23 +362,20 @@ interface SimMissile {
   altitudeFt: number | null;
 }
 
-// Fraction of a weapon system's engagement band [minRange, maxRange] that lies
-// within the radar horizon for an attacker at `altitudeFt`. 1 = full reach (high
-// flier, or horizon beyond the band); 0 = the missile is over the horizon for
-// the entire band (no engagement). Used to scale the system's per-window shots.
-function bandCoverage(
+// Radar-horizon detectability gate (deviation #6). An attacker at `altitudeFt`
+// is engageable by a system whose inner edge is `minRangeNm` only if it crosses
+// the radar horizon *before* reaching that minimum range — otherwise it pops over
+// the horizon already inside the dead zone and the system never gets a track.
+// Simultaneous guidance channels are NOT scaled by detection range: a long-range
+// SAM still fires its full channel salvo at a sea-skimmer it can see, the way it
+// does against a high flier. `null` altitude = high flier ⇒ always detectable.
+function isDetectable(
   altitudeFt: number | null,
   minRangeNm: number,
-  maxRangeNm: number,
   radarHeightFt: number,
-): number {
-  if (altitudeFt == null) return 1; // high altitude — horizon never binds
-  const horizon = radarHorizonNm(radarHeightFt, altitudeFt);
-  // No finite/positive band width: fall back to a hard gate at min range.
-  if (!Number.isFinite(maxRangeNm) || maxRangeNm <= minRangeNm) {
-    return horizon >= minRangeNm ? 1 : 0;
-  }
-  return clamp01((horizon - minRangeNm) / (maxRangeNm - minRangeNm));
+): boolean {
+  if (altitudeFt == null) return true; // high altitude — horizon never binds
+  return radarHorizonNm(radarHeightFt, altitudeFt) >= minRangeNm;
 }
 
 // A weapon system engages if it has a valid range envelope (e.g. maxRange >= minRange).
@@ -392,39 +389,25 @@ function systemEngages(ws: WeaponSystem): boolean {
 type Shot = {
   pk: number;
   minRangeNm: number;
-  maxRangeNm: number;
 };
 
-// One window's worth of shots for a layer. Each engaging system contributes
-// round(channels × engagementsPerChannel × avgCoverage) shots, where avgCoverage
-// is the mean radar-horizon band coverage over the window's missiles (1 for
-// high-altitude attackers ⇒ full channels × engagements, the legacy behaviour).
-// Shots are tagged with the system's pk / min / max range and sorted pk-desc so
-// allocation deals the best shots first. Counts are floored & clamped ≥ 0 so a
-// malformed system never produces negative or fractional shots.
-function windowShots(
-  layer: DefenseLayer,
-  windowMissiles: SimMissile[],
-  radarHeightFt: number,
-): Shot[] {
+// One window's worth of shots for a layer: each engaging system contributes
+// channels × engagementsPerChannel shots tagged with its pk and minRangeNm.
+// Sorted pk-desc so allocation deals the best shots first. Counts are floored
+// & clamped ≥ 0 so a malformed system never produces negative or fractional
+// shots. Radar-horizon limiting is applied per-missile at deal time (see
+// `isDetectable`), not by scaling these counts.
+function layerShots(layer: DefenseLayer): Shot[] {
   const shots: Shot[] = [];
   for (const ws of layer.weaponSystems) {
     if (!systemEngages(ws)) continue;
-    const base =
+    const n =
       Math.max(0, Math.floor(ws.channels)) *
       Math.max(0, Math.floor(ws.engagementsPerChannel));
-    if (base === 0 || windowMissiles.length === 0) continue;
-    const minRangeNm = ws.minRangeNm ?? 0;
-    const maxRangeNm = ws.maxRangeNm ?? Number.POSITIVE_INFINITY;
-    const avgCoverage =
-      windowMissiles.reduce(
-        (acc, m) => acc + bandCoverage(m.altitudeFt, minRangeNm, maxRangeNm, radarHeightFt),
-        0,
-      ) / windowMissiles.length;
-    const n = Math.round(base * avgCoverage);
     const pk = clamp01(ws.pk);
+    const minRangeNm = ws.minRangeNm ?? 0;
     for (let i = 0; i < n; i++) {
-      shots.push({ pk, minRangeNm, maxRangeNm });
+      shots.push({ pk, minRangeNm });
     }
   }
   return shots.sort((a, b) => b.pk - a.pk);
@@ -450,8 +433,9 @@ function simulateDefense(
 
   for (const layer of layers) {
     const incoming = sum(survival);
+    const shots = layerShots(layer);
 
-    if (incoming === 0) {
+    if (shots.length === 0 || incoming === 0) {
       layerResults.push({
         layerName: layer.name,
         incoming,
@@ -475,14 +459,6 @@ function simulateDefense(
         windowIdx.push(live[i]);
         i++;
       }
-      // Shot pool depends on the window's missiles (their altitude scales each
-      // system's shot count via the radar horizon).
-      const shots = windowShots(
-        layer,
-        windowIdx.map((idx) => arrivalPool[idx]),
-        radarHeightFt,
-      );
-      if (shots.length === 0) continue;
       // Deal shots round-robin: pass after pass, one per missile.
       let s = 0;
       while (s < shots.length) {
@@ -491,12 +467,11 @@ function simulateDefense(
           const missileIdx = windowIdx[k];
           const m = arrivalPool[missileIdx];
           const shot = shots[s];
-          // Within launch envelope and detectable within the radar horizon for
-          // this system's band (skimmers over the horizon for the whole band
-          // can't be engaged at all).
+          // Within launch envelope (deviation #5) and detectable within the
+          // radar horizon (deviation #6). A sea-skimmer that pops over the
+          // horizon already inside this system's min range can't be engaged.
           const reaches = m.launchRangeNm >= shot.minRangeNm;
-          const visible =
-            bandCoverage(m.altitudeFt, shot.minRangeNm, shot.maxRangeNm, radarHeightFt) > 0;
+          const visible = isDetectable(m.altitudeFt, shot.minRangeNm, radarHeightFt);
           if (reaches && visible) {
             survival[missileIdx] *= 1 - shot.pk;
             shotUsed = true;

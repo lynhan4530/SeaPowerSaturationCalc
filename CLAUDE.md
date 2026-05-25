@@ -141,20 +141,27 @@ defense layer parameters) that were auto-populated from the game data.
 
 ### Radar Horizon SAM Range Capping ✅
 
-Sea-skimming missiles hide below the radar horizon, so a defender's long-range
-area SAM is far less effective against them than against a high-altitude threat.
-The model now scales each weapon system's per-window shot count by the fraction
-of its engagement band within the radar horizon.
+Sea-skimming missiles hide below the radar horizon, so a defender can't track them
+until they are close. This is modeled as a **detectability gate**, not a shot-count
+scaling: simultaneous guidance channels are *not* reduced by detection range (a
+long-range SAM still fires its full channel salvo at a sea-skimmer it can see, the
+same as against a high flier). The saturation danger therefore stays "salvo size
+vs channel count," with the horizon only excluding systems that can't get a track.
+
+> A proportional band-fraction model was tried first and rejected: dividing shots
+> by the full kinematic max range (e.g. an HHQ-9B's 260 nm) crushed a 16-channel
+> SAM to ~2 shots even though it has ~137 s to fire after detecting a 540 kt
+> Harpoon at the horizon. The gate is the physically honest choice for a single
+> synchronized arrival window.
 
 **Physics:** `horizon_nm = 1.23 × (√H_radar + √H_missile)` (heights in feet) —
 `radarHorizonNm()` in `geo.ts` (pure).
 
-**Model (proportional shots):** per window, each engaging system contributes
-`round(channels × engagementsPerChannel × avgCoverage)` shots, where
-`coverage = clamp01((horizon − minRange) / (maxRange − minRange))` averaged over
-the window's missiles. `bandCoverage()` + `windowShots()` in `calc.ts`. A missile
-whose coverage is 0 (over the horizon for the whole band) cannot be engaged by
-that system at all.
+**Rule (`isDetectable` in `calc.ts`):** an attacker at `altitudeFt` is engageable
+by a system with inner edge `minRangeNm` iff `horizon ≥ minRangeNm` — it must
+cross the horizon *before* reaching the dead zone. Applied **per missile at deal
+time** inside `simulateDefense` (alongside the deviation-#5 launch-range check);
+`layerShots()` still produces the full `channels × engagementsPerChannel` pool.
 
 **Data flow:**
 - Attacker altitude rides on the calc `Missile` as `altitudeFt?: number | null`.
@@ -166,10 +173,10 @@ that system at all.
   ("Radar ht", ft), migrated by `storage.ts`. Threaded into `computeSaturation`
   and `simulateDefense`.
 
-**Reduces to legacy:** `altitudeFt == null` ⇒ `coverage = 1` ⇒
-`round(channels × eng × 1)` = the old shot count, so every prior test and saved
+**Reduces to legacy:** `altitudeFt == null` ⇒ `isDetectable` is always true ⇒ the
+shot pool and allocation are exactly the old model, so every prior test and saved
 scenario is unchanged. The inverse solver assumes a high-altitude attack (no
-cap). Tests TC-56..59.
+gate). Tests TC-56..59.
 
 ---
 
@@ -186,7 +193,7 @@ PRD wording.**
 | 3 | Target closing the gap | **Pre-check before iterative loop.** If target is closing on a stationary ship, set `repositionTimeS = 0` and `waitTimeS = (range - missileMaxRange) / targetClosingSpeed * 3600`. Required for TC-10. |
 | 4 | Defense-layer window timing | **Sliding window from first arrival in each layer.** First arrival opens window 0; arrivals within `windowS` of it stay in window 0; first outside opens window 1. |
 | 5 | Defense-layer envelope check | **At launch range, not arrival range.** A weapon system engages iff `salvo.rangeToTargetNm >= ws.minRangeNm`. This replaced the original "check at range ≈ 0" rule which broke all SAMs with a positive minimum range. Post-Phase 2 this check is **per shot** inside `simulateDefense()`. |
-| 6 | Radar horizon cap | **Proportional shot scaling, not a hard max-range gate.** A system's per-window shots are scaled by `coverage = clamp01((horizon − minRange)/(maxRange − minRange))`, `horizon = 1.23×(√H_radar + √H_missile)`. `null` attacker altitude ⇒ `coverage = 1` ⇒ legacy behavior. Radar height is the scenario-level `radarHeightFt` (default 50). See the section above. |
+| 6 | Radar horizon cap | **Detectability gate, not channel scaling.** A system engages an attacker iff `horizon ≥ minRangeNm`, `horizon = 1.23×(√H_radar + √H_missile)`; channels are *not* scaled by detection range. `null` attacker altitude ⇒ always detectable ⇒ legacy behavior. Radar height is the scenario-level `radarHeightFt` (default 50). See the section above. |
 
 ## File structure
 
