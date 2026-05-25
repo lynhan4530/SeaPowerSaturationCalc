@@ -404,12 +404,54 @@ function engagementReach(ws: WeaponSystem, m: SimMissile, radarHeightFt: number)
   const maxR = ws.maxRangeNm ?? Number.POSITIVE_INFINITY;
   const effMax = Math.min(maxR, radarHorizonNm(radarHeightFt, m.altitudeFt));
   if (effMax <= minR) return 0; // over the horizon before reaching the envelope
-  const usableDepthNm = effMax - minR;
-  const speed = m.speedKnots > 0 ? m.speedKnots : 600;
-  const eng = Math.max(1, Math.floor(ws.engagementsPerChannel));
-  const neededDepthNm = (speed * cadenceSeconds(ws.guidance) * eng) / 3600;
-  if (neededDepthNm <= 0) return 1;
-  return clamp01(usableDepthNm / neededDepthNm);
+
+  const speedm = m.speedKnots > 0 ? m.speedKnots : 600;
+  const speedd = ws.speedKnots && ws.speedKnots > 0 ? ws.speedKnots : Number.POSITIVE_INFINITY;
+  const cadence = cadenceSeconds(ws.guidance);
+  const eng = ws.engagementsPerChannel;
+
+  if (eng <= 0) return 0;
+
+  // If defending missile speed is infinite (e.g. guns/CIWS, or custom weapon system with no speed set)
+  if (speedd === Number.POSITIVE_INFINITY) {
+    const neededDepthNm = (speedm * cadence * eng) / 3600;
+    if (neededDepthNm <= 0) return 1;
+    return clamp01((effMax - minR) / neededDepthNm);
+  }
+
+  // Finite defending missile speed: sequential intercept model
+  const f = speedd / (speedd + speedm);
+  const dCadence = (speedm * cadence) / 3600;
+
+  let remainingEng = eng;
+  let sumFractions = 0;
+  let currentStart = effMax;
+  let currentIntercept = effMax;
+
+  for (let step = 0; step < Math.ceil(eng); step++) {
+    const weight = Math.min(remainingEng, 1);
+    remainingEng -= weight;
+
+    if (step > 0) {
+      currentStart = currentIntercept - dCadence;
+    }
+
+    if (currentStart <= minR) {
+      break;
+    }
+
+    currentIntercept = currentStart * f;
+
+    if (currentIntercept >= minR) {
+      sumFractions += 1 * weight;
+    } else {
+      const frac = (currentStart - minR) / (currentStart - currentIntercept);
+      sumFractions += clamp01(frac) * weight;
+      break; // subsequent engagements start inside the minRange dead zone
+    }
+  }
+
+  return sumFractions / eng;
 }
 
 // A weapon system engages if it has a valid range envelope (e.g. maxRange >= minRange).

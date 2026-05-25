@@ -99,7 +99,7 @@ const ws = (
   pk: number,
   channels: number,
   engagementsPerChannel = 1,
-  opts: { name?: string; minRangeNm?: number; maxRangeNm?: number } = {},
+  opts: { name?: string; minRangeNm?: number; maxRangeNm?: number; speedKnots?: number } = {},
 ): WeaponSystem => ({
   id: id('ws'),
   name: opts.name ?? 'WS',
@@ -109,6 +109,7 @@ const ws = (
   pk,
   minRangeNm: opts.minRangeNm,
   maxRangeNm: opts.maxRangeNm,
+  speedKnots: opts.speedKnots,
 });
 
 const sysLayer = (
@@ -782,6 +783,43 @@ describe('TC-59: a SLOW sea-skimmer is barely reduced (plenty of engagement time
     const s = salvo(m.id, 't', 4, 50, 0);
     const result = computeLayerBreakdown([s], [0], [sam], [m], 50);
     expect(result[0]).toMatchObject({ incoming: 4, intercepted: 4, leakers: 0 });
+  });
+});
+
+// ───────── Defending missile speed (SAM speed) ─────────
+
+describe('TC-60: defending missile speed impacts reach', () => {
+  it('infinite speed fallback matches legacy calculation', () => {
+    const sam = sysLayer('SAM', 30, [ws(1, 4, 2, { minRangeNm: 2, maxRangeNm: 90 })]);
+    const m = missile('Harpoon', 1000, 100);
+    const s = salvo(m.id, 't', 8, 50, 0);
+    const result = computeLayerBreakdown([s], [0], [sam], [m], 50);
+    expect(result[0]).toMatchObject({ incoming: 8, intercepted: 8, leakers: 0 });
+  });
+
+  it('finite speed degrades reach and limits re-engagements', () => {
+    // Target detected at effMax = min(90, 15.43) = 15.43 NM.
+    // Target speed = 1000 kts, SAM speed = 2000 kts.
+    // Cadence = 30s -> dCadence = 1000 * 30 / 3600 = 8.33 NM.
+    // minRange = 2 NM.
+    //
+    // eng = 2:
+    // f = 2000 / (2000 + 1000) = 2/3.
+    // Step 1:
+    //   currentStart = 15.43 NM
+    //   currentIntercept = 15.43 * (2/3) = 10.28 NM.
+    //   Since 10.28 >= 2, fraction is 1.0.
+    // Step 2:
+    //   currentStart = 10.28 - 8.33 = 1.95 NM.
+    //   Since 1.95 <= 2, fraction is 0.0.
+    // Total reach = (1.0 + 0.0) / 2 = 0.5.
+    // shots = round(channels * eng * reach) = round(4 * 2 * 0.5) = 4.
+    // Incoming 8 -> Intercepted 4, Leakers 4.
+    const sam = sysLayer('SAM', 30, [ws(1, 4, 2, { minRangeNm: 2, maxRangeNm: 90, speedKnots: 2000 })]);
+    const m = { ...missile('Harpoon', 1000, 100), altitudeFt: 30 };
+    const s = salvo(m.id, 't', 8, 50, 0);
+    const result = computeLayerBreakdown([s], [0], [sam], [m], 50);
+    expect(result[0]).toMatchObject({ incoming: 8, intercepted: 4, leakers: 4 });
   });
 });
 

@@ -51,16 +51,30 @@ export async function buildDefenseLayersForShip(ship: ShipPreset, loadoutName: s
     const matchingMounts = ship.mounts.filter((m) => m.weaponType?.toLowerCase() === 'missile');
     if (matchingMounts.length === 0) continue;
 
-    // Resolve guidance type
+    // Resolve guidance type: both ARH and IR are treated as fire-and-forget (ARH)
     let guidance: GuidanceType = 'SARH';
-    if (missile.guidance === 'ARH') {
+    if (missile.guidance === 'ARH' || missile.guidance === 'IR') {
       guidance = 'ARH';
     }
 
     // Determine channels
-    // For SARH, channels are shared across the terminal directors
-    // For ARH, it is fire-and-forget, so channels are generally determined by the VLS fire rate (e.g. 8)
-    const channels = guidance === 'SARH' ? totalIlluminatorChannels : 8;
+    // For SARH, channels are shared across terminal directors (Targeting type).
+    // For ARH/IR (fire-and-forget), we check tracking directors (DirectedSearch + Targeting),
+    // and exclude utility systems with unreasonably high placeholder channels (like GPS with 5000).
+    let channels = 8;
+    if (guidance === 'SARH') {
+      channels = totalIlluminatorChannels;
+    } else {
+      const trackingDirectors = ship.directors.filter(
+        (d) =>
+          (d.type?.toLowerCase() === 'targeting' ||
+            d.type?.toLowerCase() === 'directedsearch') &&
+          d.resolved
+      );
+      const validDirectors = trackingDirectors.filter((d) => (d.weaponChannels ?? 0) < 500);
+      const sumTracking = validDirectors.reduce((sum, d) => sum + (d.weaponChannels ?? 0), 0);
+      channels = sumTracking > 0 ? sumTracking : 8;
+    }
 
     const maxRange = missile.maxRangeNm ?? 15;
     const pk = missile.killProbability ?? 0.8;
@@ -74,6 +88,7 @@ export async function buildDefenseLayersForShip(ship: ShipPreset, loadoutName: s
       pk,
       minRangeNm: missile.minRangeNm ?? undefined,
       maxRangeNm: missile.maxRangeNm ?? undefined,
+      speedKnots: missile.speedKnots ?? undefined,
     };
 
     if (maxRange >= 15) {

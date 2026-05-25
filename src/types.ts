@@ -52,6 +52,7 @@ export type WeaponSystem = {
   pk: number;
   minRangeNm?: number;
   maxRangeNm?: number;
+  speedKnots?: number;
 };
 
 export type DefenseLayer = {

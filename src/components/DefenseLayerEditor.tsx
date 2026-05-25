@@ -320,6 +320,26 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers, isPreset = fa
                               className={`w-full ${NUM_CLS} disabled:opacity-70 disabled:cursor-not-allowed`}
                             />
                           </label>
+                          <label 
+                            className="flex flex-col gap-0.5 cursor-help"
+                            title="Defending missile speed in knots. Finite speed limits maximum intercept range and degrades re-engagement capacity against fast targets."
+                          >
+                            <span className="text-[10px] uppercase tracking-wider">Speed (kts)</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={ws.speedKnots ?? ''}
+                              placeholder="—"
+                              onChange={(e) =>
+                                updateSystem(layer.id, ws.id, {
+                                  speedKnots:
+                                    e.target.value === '' ? undefined : Number(e.target.value),
+                                })
+                              }
+                              disabled={isPreset}
+                              className={`w-full ${NUM_CLS} disabled:opacity-70 disabled:cursor-not-allowed`}
+                            />
+                          </label>
                         </div>
                       </li>
                     ))}

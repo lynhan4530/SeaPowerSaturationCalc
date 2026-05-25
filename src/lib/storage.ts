@@ -31,6 +31,7 @@ type RawWeaponSystem = {
   pk?: number;
   minRangeNm?: number;
   maxRangeNm?: number;
+  speedKnots?: number;
 };
 
 type RawLayer = {
@@ -59,6 +60,7 @@ function migrateWeaponSystem(raw: RawWeaponSystem): WeaponSystem {
     pk: raw.pk ?? 1,
     minRangeNm: raw.minRangeNm,
     maxRangeNm: raw.maxRangeNm,
+    speedKnots: raw.speedKnots,
   };
 }
 
