@@ -8,21 +8,29 @@ Fire-control planning web app for the game *Sea Power*. Greenfield build from
 - Vite 5 + React 18 + TypeScript 5.6 (strict mode, no `any`)
 - Tailwind CSS 3 (custom palette in `tailwind.config.js`)
 - State: `useReducer` + Context (no external state lib). See `src/hooks/useScenario.tsx`.
-- Persistence: `localStorage`. See `src/lib/storage.ts`.
-- Tests: Vitest + jsdom. Suite lives in `src/lib/__tests__/calc.test.ts` (TC-01..46).
+- Persistence: `localStorage` for scenarios + **IndexedDB (Dexie.js)** for game preset data.
+- Tests: Vitest + jsdom. Suite lives in `src/lib/__tests__/calc.test.ts` (TC-01..55, 42 tests).
+- Deployment: GitHub Pages via GitHub Actions CI/CD (auto-deploys on push to `main`).
+- Base path: `/SeaPowerSaturationCalc/` (configured in `vite.config.ts`).
 
 ## Commands
 
 ```powershell
 $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
 npm install         # one-time
-npm run dev         # Vite dev server at http://localhost:5173/
-npm test            # Vitest
+npm run dev         # Vite dev server at http://localhost:5173/SeaPowerSaturationCalc/
+npm test            # Vitest (42 tests)
+npm run build       # tsc + vite build (production)
 npx tsc --noEmit    # typecheck only
 ```
 
 The `$env:Path` line is only needed if PowerShell was opened before Node was
 installed; new windows pick up PATH automatically.
+
+PowerShell execution policy workaround (if npm scripts are blocked):
+```powershell
+powershell -ExecutionPolicy Bypass -Command "npm run test"
+```
 
 ## Build plan
 
@@ -38,26 +46,97 @@ for the full plan. The original six stages are **all shipped**:
 
 ### Post-launch work
 
-- **Inverse solver** ✅ shipped on branch `feat/inverse-solver` (PR #1, left open
-  for review). `solveInverseSaturation()` in `calc.ts` is the pure dual of
+- **Inverse solver** ✅ `solveInverseSaturation()` in `calc.ts` is the pure dual of
   `computeLayerBreakdown`: under synchronized arrival,
   `minSaturatingSalvo = Σ(interceptsPerWindow over engaging layers) + 1`. Surfaced
   as `SaturationThresholdCard` in `ResultsPanel`. Tests TC-41..46.
-- **Channel-based defense + leak probability** ✅ built on branch
-  `feat/channel-defense` (design in `PHASE2_DESIGN.md`). A `DefenseLayer` now holds
-  `weaponSystems: WeaponSystem[]` (each `{guidance, channels, engagementsPerChannel,
-  pk, min/maxRangeNm}`) instead of a flat `interceptsPerWindow`. Per window a layer
-  fires `Σ engaging channels × engagementsPerChannel` shots, dealt one per live
-  missile per pass (best-pk first); each missile carries a survival probability
-  `q ×= (1 − pk)`. Verdict is now probabilistic: `hullImpacts = Σ q`,
-  `saturationProbability = 1 − Π(1 − q)`, `saturated = saturationProbability ≥
-  scenario.saturationConfidence` (default 0.5, editable in the Results header).
-  At `pk = 1` it reduces exactly to the old integer model — the migration anchor
-  (`storage.ts migrateScenario` synthesizes one pk=1 SARH system per legacy layer).
-  Tests TC-47..55. Channel/pk data will come from the handed-off `presets.json`
-  parser. **Branched off `feat/inverse-solver`**, so this branch also contains the
-  inverse solver (PR #1); merge order matters.
-- **`presets.json` parser** — handed off to a separate agent (Option B).
+- **Channel-based defense + leak probability** ✅ (design in `PHASE2_DESIGN.md`).
+  A `DefenseLayer` now holds `weaponSystems: WeaponSystem[]` (each `{guidance,
+  channels, engagementsPerChannel, pk, min/maxRangeNm}`) instead of a flat
+  `interceptsPerWindow`. Per window a layer fires `Σ engaging channels ×
+  engagementsPerChannel` shots, dealt one per live missile per pass (best-pk first);
+  each missile carries a survival probability `q ×= (1 − pk)`. Verdict is now
+  probabilistic: `hullImpacts = Σ q`, `saturationProbability = 1 − Π(1 − q)`,
+  `saturated = saturationProbability ≥ scenario.saturationConfidence` (default 0.5,
+  editable in the Results header). At `pk = 1` it reduces exactly to the old integer
+  model — the migration anchor (`storage.ts migrateScenario` synthesizes one pk=1
+  SARH system per legacy layer). Tests TC-47..55.
+- **Data Integration + IndexedDB Migration** ✅ — see section below.
+- **GitHub Pages Deployment** ✅ — see section below.
+- **Envelope-Checking Fix** ✅ — see section below.
+- **Preset Input Locking + Tooltips** ✅ — see section below.
+
+---
+
+### Data Integration & IndexedDB Migration ✅
+
+Integrated the `SeaPowerDataExtraction` parser output into the web app using
+browser-side IndexedDB (Dexie.js) for game preset storage.
+
+**Key files:**
+- `src/lib/db.ts` — Dexie database schema (tables: `missiles`, `launchers`, `illuminators`, `ships`, `sources`).
+- `src/hooks/useDbLoader.tsx` — Seeds IndexedDB from `/presets.json` on first load; supports custom file upload.
+- `src/lib/vesselSync.ts` — `buildDefenseLayersForShip()`, `getMissilesForShip()`, `getMagazineSizeForShip()` — converts game preset data into the planner's `DefenseLayer[]` model.
+- `public/presets.json` — Pre-built preset data generated by the `SeaPowerDataExtraction` tool.
+
+**UI features:**
+- **Vessel Autocomplete Search** — Debounced search component (`VesselSelector`) in `LeftPanel.tsx` queries IndexedDB by ship name/nickname.
+- **Loadout Dropdown** — On both friendly and target ship cards. Switching loadouts dynamically rebuilds defense layers (SAMs, CIWS) and recalculates magazine capacity.
+- **Launcher-Filtered Missile Dropdowns** — Friendly salvo missile selection is restricted to ammo compatible with the ship's active launchers.
+- **Sync Game Data** — Button in `Header.tsx` to upload custom `presets.json` files into IndexedDB.
+
+---
+
+### GitHub Pages Deployment ✅
+
+- `vite.config.ts` base path set to `/SeaPowerSaturationCalc/`.
+- `.github/workflows/deploy.yml` — CI/CD workflow triggers on push to `main`, runs typecheck + tests + build, and deploys `dist/` to the `gh-pages` branch.
+- Live at: `https://lynhan4530.github.io/SeaPowerSaturationCalc/`
+
+---
+
+### Envelope-Checking Fix ✅
+
+**Problem:** SAM systems with `minRangeNm > 0` (e.g. HHQ-9B with min range 2 nm)
+were completely excluded from the defense simulation, causing 0 missile interceptions.
+The old code checked if range 0 fell within the SAM's envelope (`minR <= 0`), which
+was always false for any system with a positive minimum range.
+
+**Fix:** Refactored the simulation in `calc.ts` to use **launch range** instead of
+arrival range:
+- Introduced `SimMissile` interface tracking `{ arrivalTimeS, launchRangeNm }`.
+- `layerShots()` returns `Shot[]` objects carrying both `pk` and `minRangeNm`.
+- `simulateDefense()` now checks `missile.launchRangeNm >= shot.minRangeNm` before
+  applying each shot. Shots from systems whose minimum range exceeds the missile's
+  launch range are skipped.
+- `expandPool()` maps each salvo's `rangeToTargetNm` as the launch range.
+- `solveInverseSaturation()` uses `launchRangeNm = Infinity` for the mock pool so
+  all SAMs are counted toward defensive capacity for standard attacks.
+- Updated tests TC-43 and TC-53 to verify correct physical envelope behavior.
+
+**Rule:** A weapon system engages a salvo iff `salvo.rangeToTargetNm >= ws.minRangeNm`.
+
+---
+
+### Preset Input Locking + Tooltips ✅
+
+**Problem:** Users could accidentally modify preset-derived values (speed, magazine,
+defense layer parameters) that were auto-populated from the game data.
+
+**Fix:**
+- When a ship is linked to a preset (`ship.presetId` is set), the following inputs
+  are **disabled** with `cursor-not-allowed` styling:
+  - Friendly ships: Speed (kts), Magazine
+  - Target ships: Speed (kts), all defense layer fields (Window, Channels, Eng/ch,
+    Pk, Min nm, Max nm), layer name, guidance dropdown
+  - Target ships: `+ Layer`, `Delete`, `+ System`, `×` buttons are **hidden**
+  - Drag-to-reorder handle is hidden for preset targets
+- Users can **Clear Link** to detach from the preset and unlock all inputs.
+- Added `title` tooltip attributes with `cursor-help` styling to all input labels
+  explaining what each field does (e.g. "Single-shot probability of kill. The chance
+  (0 to 1) that a single defensive shot intercepts its target.").
+
+---
 
 ## PRD deviations (decided with user — do not silently revert)
 
@@ -70,25 +149,38 @@ The PRD has five internal inconsistencies that were resolved before coding.
 | 2 | Wait + reposition order | **Reposition first, then wait at firing point.** `fireTimeS = repositionTimeS + waitTimeS`. The PRD's stated `fireTimeS = repositionTimeS` and TC-09 wording need updating in Stage 3. |
 | 3 | Target closing the gap | **Pre-check before iterative loop.** If target is closing on a stationary ship, set `repositionTimeS = 0` and `waitTimeS = (range - missileMaxRange) / targetClosingSpeed * 3600`. Required for TC-10. |
 | 4 | Defense-layer window timing | **Sliding window from first arrival in each layer.** First arrival opens window 0; arrivals within `windowS` of it stay in window 0; first outside opens window 1. |
-| 5 | Defense-layer envelope check | **At arrival (range ≈ 0).** Engages iff `0 ∈ [minRangeNm ?? -∞, maxRangeNm ?? +∞]`. Note: this makes `maxRangeNm` effectively useless for any positive value. TC-24 needs rewriting: 95nm salvo, SM-2 max 80nm → SM-2 **engages** (0 < 80). Post-Phase 2 this check is **per weapon system**, not per layer. |
+| 5 | Defense-layer envelope check | **At launch range, not arrival range.** A weapon system engages iff `salvo.rangeToTargetNm >= ws.minRangeNm`. This replaced the original "check at range ≈ 0" rule which broke all SAMs with a positive minimum range. Post-Phase 2 this check is **per shot** inside `simulateDefense()`. |
 
 ## File structure
 
 ```
 src/
-  types.ts              — single source of truth for all entities
+  types.ts              — single source of truth for all entities + game preset types
   App.tsx, main.tsx
   hooks/
     useScenario.tsx     — reducer + Context + 50-state history stack + persistence
+    useDbLoader.tsx     — IndexedDB seeding + custom presets.json upload
   lib/
     geo.ts              — projectPosition, bearingTo, distance (pure, no React)
     storage.ts          — localStorage I/O, export/import, Phase 2 layer migration
     calc.ts             — solver, group sync, clustering, probabilistic defense sim, inverse solver
-    __tests__/calc.test.ts — Vitest suite (TC-01..55)
+    db.ts               — Dexie.js IndexedDB schema (missiles, launchers, illuminators, ships, sources)
+    vesselSync.ts       — converts game presets into DefenseLayer[] / missile lists / magazine size
+    __tests__/calc.test.ts — Vitest suite (TC-01..55, 42 tests)
   components/
-    Header.tsx, LeftPanel.tsx, RightPanel.tsx
-    CompassInput.tsx, DefenseLayerEditor.tsx, MissileLibrary.tsx
-    ResultsPanel.tsx, Timeline.tsx
+    Header.tsx          — scenario tabs, import/export, Sync Game Data button
+    LeftPanel.tsx       — friendly ships, target ships, VesselSelector, loadout dropdown
+    RightPanel.tsx
+    CompassInput.tsx    — bearing input + SVG compass rose
+    DefenseLayerEditor.tsx — weapon system editor, drag reorder, preset locking
+    MissileLibrary.tsx  — modal for managing missile library
+    ResultsPanel.tsx    — per-target solution blocks, saturation, inverse solver card
+    Timeline.tsx        — read-only swimlane renderer with zoom/pan
+public/
+  presets.json          — game data extracted by SeaPowerDataExtraction
+.github/
+  workflows/
+    deploy.yml          — CI/CD: typecheck + test + build + deploy to gh-pages
 ```
 
 `PHASE2_DESIGN.md` (repo root) holds the channel-based-defense design note.
@@ -102,9 +194,20 @@ src/
 - Bearings normalized to [0, 360); inputs clamped on edit.
 - Numbers shown to user: 1 decimal for nm/kts, whole seconds for time.
 - Custom Tailwind colors: `navy`, `panel`, `panelBorder`, `textPrimary`, `textSecondary`, `amberAccent`, `redAccent`, `greenAccent`. Use those instead of raw hex.
+- Preset-linked ships disable auto-populated inputs; users must "Clear Link" to unlock manual editing.
+- All input labels have descriptive `title` tooltips with `cursor-help` styling.
 
 ## What NOT to add
 
 The PRD's "What NOT to Build" list is binding. No map rendering, no real lat/lon,
 no multiplayer, no backend, no auth, no animation on timeline bars, no mobile
 layout. Drag-to-reorder is **only** for defense layers in Stage 2.
+
+## Future considerations
+
+- **Radar horizon / Earth curvature** — Sea-skimming missiles (e.g. Harpoon at 30 ft)
+  have a much shorter detection range than high-altitude missiles (e.g. AS-4 at
+  30,000 ft). The formula `horizon_nm ≈ 1.23 × (√H_radar + √H_missile)` could cap
+  effective SAM `maxRangeNm` based on missile altitude. The game data already has
+  `seaSkimming` and `seaSkimmingAltFt` fields in `MissilePreset`. Not yet implemented
+  — user decided to fix the basic envelope logic first and revisit later.
