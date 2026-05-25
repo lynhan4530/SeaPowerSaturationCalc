@@ -348,29 +348,42 @@ export function clusterBearings(bearings: number[]): BearingCluster[] {
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
-// A weapon system engages iff its envelope contains the arrival range ≈ 0
-// (deviation #5). minR/maxR default to ±∞.
-function systemEngages(ws: WeaponSystem): boolean {
-  const minR = ws.minRangeNm ?? Number.NEGATIVE_INFINITY;
-  const maxR = ws.maxRangeNm ?? Number.POSITIVE_INFINITY;
-  return minR <= 0 && maxR >= 0;
+interface SimMissile {
+  arrivalTimeS: number;
+  launchRangeNm: number;
 }
 
+// A weapon system engages if it has a valid range envelope (e.g. maxRange >= minRange).
+// For specific targets/salvos, the launch range checks are executed inside the simulation.
+function systemEngages(ws: WeaponSystem): boolean {
+  const minR = ws.minRangeNm ?? 0;
+  const maxR = ws.maxRangeNm ?? Number.POSITIVE_INFINITY;
+  return maxR >= minR;
+}
+
+type Shot = {
+  pk: number;
+  minRangeNm: number;
+};
+
 // One window's worth of shots for a layer: each engaging system contributes
-// channels × engagementsPerChannel shots tagged with its pk. Sorted pk-desc so
-// allocation deals the best shots first. Counts are floored & clamped ≥ 0 so a
-// malformed system never produces negative or fractional shots.
-function layerShots(layer: DefenseLayer): number[] {
-  const shots: number[] = [];
+// channels × engagementsPerChannel shots tagged with its pk and minRangeNm.
+// Sorted pk-desc so allocation deals the best shots first. Counts are floored
+// & clamped ≥ 0 so a malformed system never produces negative or fractional shots.
+function layerShots(layer: DefenseLayer): Shot[] {
+  const shots: Shot[] = [];
   for (const ws of layer.weaponSystems) {
     if (!systemEngages(ws)) continue;
     const n =
       Math.max(0, Math.floor(ws.channels)) *
       Math.max(0, Math.floor(ws.engagementsPerChannel));
     const pk = clamp01(ws.pk);
-    for (let i = 0; i < n; i++) shots.push(pk);
+    const minRangeNm = ws.minRangeNm ?? 0;
+    for (let i = 0; i < n; i++) {
+      shots.push({ pk, minRangeNm });
+    }
   }
-  return shots.sort((a, b) => b - a);
+  return shots.sort((a, b) => b.pk - a.pk);
 }
 
 type SimResult = { layerResults: LayerResult[]; finalSurvival: number[] };
@@ -378,12 +391,10 @@ type SimResult = { layerResults: LayerResult[]; finalSurvival: number[] };
 // Core probabilistic defense simulation. Each missile carries a survival
 // probability q (1 = certain hit on hull). Layers apply in order; within a
 // layer the still-live missiles (q > 0) are grouped into sliding windows
-// (deviation #4) and each window is dealt the layer's shot pool, one shot per
-// live missile per pass (even spread — the defender can't tell which contacts
-// are already dead). A shot of probability p multiplies that missile's q by
-// (1 − p). At pk = 1 this reduces exactly to the old integer model: an engaged
-// missile's q snaps to 0, so per-layer expected counts are whole numbers.
-function simulateDefense(arrivalPool: number[], layers: DefenseLayer[]): SimResult {
+// (deviation #4) and each window is dealt the layer's shot pool.
+// A shot is only dealt to a missile if the missile's launch range >= the shot's min range.
+// A shot of probability p multiplies that missile's q by (1 − p).
+function simulateDefense(arrivalPool: SimMissile[], layers: DefenseLayer[]): SimResult {
   const n = arrivalPool.length;
   const survival = new Array<number>(n).fill(1);
   const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0);
@@ -406,22 +417,32 @@ function simulateDefense(arrivalPool: number[], layers: DefenseLayer[]): SimResu
     // Live missiles, ordered by arrival, for windowing.
     const live: number[] = [];
     for (let i = 0; i < n; i++) if (survival[i] > 0) live.push(i);
-    live.sort((a, b) => arrivalPool[a] - arrivalPool[b]);
+    live.sort((a, b) => arrivalPool[a].arrivalTimeS - arrivalPool[b].arrivalTimeS);
 
     let i = 0;
     while (i < live.length) {
-      const windowStart = arrivalPool[live[i]];
+      const windowStart = arrivalPool[live[i]].arrivalTimeS;
       const windowEnd = windowStart + layer.windowS;
       const windowIdx: number[] = [];
-      while (i < live.length && arrivalPool[live[i]] < windowEnd) {
+      while (i < live.length && arrivalPool[live[i]].arrivalTimeS < windowEnd) {
         windowIdx.push(live[i]);
         i++;
       }
       // Deal shots round-robin: pass after pass, one per missile.
       let s = 0;
       while (s < shots.length) {
+        let shotUsed = false;
         for (let k = 0; k < windowIdx.length && s < shots.length; k++) {
-          survival[windowIdx[k]] *= 1 - shots[s];
+          const missileIdx = windowIdx[k];
+          const m = arrivalPool[missileIdx];
+          const shot = shots[s];
+          if (m.launchRangeNm >= shot.minRangeNm) {
+            survival[missileIdx] *= 1 - shot.pk;
+            shotUsed = true;
+            s++;
+          }
+        }
+        if (!shotUsed) {
           s++;
         }
       }
@@ -439,11 +460,14 @@ function simulateDefense(arrivalPool: number[], layers: DefenseLayer[]): SimResu
   return { layerResults, finalSurvival: survival };
 }
 
-function expandPool(salvos: Salvo[], arrivalTimes: number[]): number[] {
-  const pool: number[] = [];
+function expandPool(salvos: Salvo[], arrivalTimes: number[]): SimMissile[] {
+  const pool: SimMissile[] = [];
   for (let i = 0; i < salvos.length; i++) {
     const at = arrivalTimes[i] ?? 0;
-    for (let j = 0; j < salvos[i].count; j++) pool.push(at);
+    const launchRangeNm = salvos[i].rangeToTargetNm;
+    for (let j = 0; j < salvos[i].count; j++) {
+      pool.push({ arrivalTimeS: at, launchRangeNm });
+    }
   }
   return pool;
 }
@@ -512,7 +536,10 @@ export function solveInverseSaturation(
   // Search 1..totalShots+1; the upper bound always saturates (pigeonhole).
   let minSaturatingSalvo = totalShots + 1;
   for (let nSalvo = 1; nSalvo <= totalShots + 1; nSalvo++) {
-    const pool = new Array<number>(nSalvo).fill(0);
+    const pool: SimMissile[] = new Array(nSalvo).fill(null).map(() => ({
+      arrivalTimeS: 0,
+      launchRangeNm: Number.POSITIVE_INFINITY,
+    }));
     const { finalSurvival } = simulateDefense(pool, target.defenseLayers);
     if (leakProbability(finalSurvival) >= conf) {
       minSaturatingSalvo = nSalvo;

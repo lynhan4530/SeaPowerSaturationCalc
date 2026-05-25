@@ -541,16 +541,16 @@ describe('TC-42: no defense layers → a single missile saturates', () => {
   });
 });
 
-describe('TC-43: non-engaging layer (minRange > 0) excluded from capacity', () => {
-  it('SM-2 minRange 5 does not engage at arrival, so only CIWS counts', () => {
+describe('TC-43: weapon system with minRange > 0 is included in capacity', () => {
+  it('SM-2 minRange 5 is included in capacity, assuming a standard outer launch range', () => {
     const sm2 = layer('SM-2', 6, 30, { minRangeNm: 5 });
     const ciws = layer('CIWS', 4, 5);
     const tgt = target('T', 0, 0, [sm2, ciws]);
     const inv = solveInverseSaturation(tgt);
-    expect(inv.layerCapacities[0]).toMatchObject({ engages: false, effectiveCapacity: 0 });
+    expect(inv.layerCapacities[0]).toMatchObject({ engages: true, effectiveCapacity: 6 });
     expect(inv.layerCapacities[1]).toMatchObject({ engages: true, effectiveCapacity: 4 });
-    expect(inv.interceptCapacity).toBe(4);
-    expect(inv.minSaturatingSalvo).toBe(5);
+    expect(inv.interceptCapacity).toBe(10);
+    expect(inv.minSaturatingSalvo).toBe(11);
   });
 });
 
@@ -684,13 +684,18 @@ describe('TC-52: multiple systems in a layer pool their shots', () => {
   });
 });
 
-describe('TC-53: a system out of envelope at arrival contributes no shots', () => {
-  it('minRange 5 system is excluded; only the engaging system fires', () => {
+describe('TC-53: a system out of envelope at arrival but in range at launch still engages', () => {
+  it('minRange 5 system engages a 50nm salvo, but is skipped for a 3nm salvo', () => {
     const tgt = target('T', 0, 0, [
       sysLayer('L', 30, [ws(1, 2), ws(1, 10, 1, { minRangeNm: 5 })]),
     ]);
-    const br = computeLayerBreakdown([salvo('m', tgt.id, 3, 50, 0)], [0], tgt.defenseLayers);
-    expect(br[0]).toMatchObject({ incoming: 3, intercepted: 2, leakers: 1 });
+    // Salvo at 50nm - both systems engage (total capacity 12)
+    const br50 = computeLayerBreakdown([salvo('m', tgt.id, 3, 50, 0)], [0], tgt.defenseLayers);
+    expect(br50[0]).toMatchObject({ incoming: 3, intercepted: 3, leakers: 0 });
+
+    // Salvo at 3nm - minRange 5 system is skipped (only system 1 engages with capacity 2)
+    const br3 = computeLayerBreakdown([salvo('m', tgt.id, 3, 3, 0)], [0], tgt.defenseLayers);
+    expect(br3[0]).toMatchObject({ incoming: 3, intercepted: 2, leakers: 1 });
   });
 });
 
