@@ -8,10 +8,17 @@ import type {
   TargetShip,
   WeaponSystem,
 } from '../types';
-import { bearingTo, distance, projectPosition } from './geo';
+import { bearingTo, distance, projectPosition, radarHorizonNm } from './geo';
 
 /** Default leak-probability threshold for the SATURATED verdict / inverse solver. */
 export const DEFAULT_SATURATION_CONFIDENCE = 0.5;
+
+/** Fallback defending-radar antenna height (ft) when a scenario lacks one. */
+export const DEFAULT_RADAR_HEIGHT_FT = 50;
+
+/** Assumed sea-skimmer altitude (ft) when a missile is sea-skimming but the
+ *  preset gives no explicit altitude. */
+export const DEFAULT_SEA_SKIM_ALT_FT = 30;
 
 export type InterceptResult = {
   shipId: string;
@@ -351,6 +358,27 @@ const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 interface SimMissile {
   arrivalTimeS: number;
   launchRangeNm: number;
+  // Cruise altitude (ft); null = high altitude → no radar-horizon cap.
+  altitudeFt: number | null;
+}
+
+// Fraction of a weapon system's engagement band [minRange, maxRange] that lies
+// within the radar horizon for an attacker at `altitudeFt`. 1 = full reach (high
+// flier, or horizon beyond the band); 0 = the missile is over the horizon for
+// the entire band (no engagement). Used to scale the system's per-window shots.
+function bandCoverage(
+  altitudeFt: number | null,
+  minRangeNm: number,
+  maxRangeNm: number,
+  radarHeightFt: number,
+): number {
+  if (altitudeFt == null) return 1; // high altitude — horizon never binds
+  const horizon = radarHorizonNm(radarHeightFt, altitudeFt);
+  // No finite/positive band width: fall back to a hard gate at min range.
+  if (!Number.isFinite(maxRangeNm) || maxRangeNm <= minRangeNm) {
+    return horizon >= minRangeNm ? 1 : 0;
+  }
+  return clamp01((horizon - minRangeNm) / (maxRangeNm - minRangeNm));
 }
 
 // A weapon system engages if it has a valid range envelope (e.g. maxRange >= minRange).
@@ -364,23 +392,39 @@ function systemEngages(ws: WeaponSystem): boolean {
 type Shot = {
   pk: number;
   minRangeNm: number;
+  maxRangeNm: number;
 };
 
-// One window's worth of shots for a layer: each engaging system contributes
-// channels × engagementsPerChannel shots tagged with its pk and minRangeNm.
-// Sorted pk-desc so allocation deals the best shots first. Counts are floored
-// & clamped ≥ 0 so a malformed system never produces negative or fractional shots.
-function layerShots(layer: DefenseLayer): Shot[] {
+// One window's worth of shots for a layer. Each engaging system contributes
+// round(channels × engagementsPerChannel × avgCoverage) shots, where avgCoverage
+// is the mean radar-horizon band coverage over the window's missiles (1 for
+// high-altitude attackers ⇒ full channels × engagements, the legacy behaviour).
+// Shots are tagged with the system's pk / min / max range and sorted pk-desc so
+// allocation deals the best shots first. Counts are floored & clamped ≥ 0 so a
+// malformed system never produces negative or fractional shots.
+function windowShots(
+  layer: DefenseLayer,
+  windowMissiles: SimMissile[],
+  radarHeightFt: number,
+): Shot[] {
   const shots: Shot[] = [];
   for (const ws of layer.weaponSystems) {
     if (!systemEngages(ws)) continue;
-    const n =
+    const base =
       Math.max(0, Math.floor(ws.channels)) *
       Math.max(0, Math.floor(ws.engagementsPerChannel));
-    const pk = clamp01(ws.pk);
+    if (base === 0 || windowMissiles.length === 0) continue;
     const minRangeNm = ws.minRangeNm ?? 0;
+    const maxRangeNm = ws.maxRangeNm ?? Number.POSITIVE_INFINITY;
+    const avgCoverage =
+      windowMissiles.reduce(
+        (acc, m) => acc + bandCoverage(m.altitudeFt, minRangeNm, maxRangeNm, radarHeightFt),
+        0,
+      ) / windowMissiles.length;
+    const n = Math.round(base * avgCoverage);
+    const pk = clamp01(ws.pk);
     for (let i = 0; i < n; i++) {
-      shots.push({ pk, minRangeNm });
+      shots.push({ pk, minRangeNm, maxRangeNm });
     }
   }
   return shots.sort((a, b) => b.pk - a.pk);
@@ -394,7 +438,11 @@ type SimResult = { layerResults: LayerResult[]; finalSurvival: number[] };
 // (deviation #4) and each window is dealt the layer's shot pool.
 // A shot is only dealt to a missile if the missile's launch range >= the shot's min range.
 // A shot of probability p multiplies that missile's q by (1 − p).
-function simulateDefense(arrivalPool: SimMissile[], layers: DefenseLayer[]): SimResult {
+function simulateDefense(
+  arrivalPool: SimMissile[],
+  layers: DefenseLayer[],
+  radarHeightFt: number = DEFAULT_RADAR_HEIGHT_FT,
+): SimResult {
   const n = arrivalPool.length;
   const survival = new Array<number>(n).fill(1);
   const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0);
@@ -402,9 +450,8 @@ function simulateDefense(arrivalPool: SimMissile[], layers: DefenseLayer[]): Sim
 
   for (const layer of layers) {
     const incoming = sum(survival);
-    const shots = layerShots(layer);
 
-    if (shots.length === 0 || incoming === 0) {
+    if (incoming === 0) {
       layerResults.push({
         layerName: layer.name,
         incoming,
@@ -428,6 +475,14 @@ function simulateDefense(arrivalPool: SimMissile[], layers: DefenseLayer[]): Sim
         windowIdx.push(live[i]);
         i++;
       }
+      // Shot pool depends on the window's missiles (their altitude scales each
+      // system's shot count via the radar horizon).
+      const shots = windowShots(
+        layer,
+        windowIdx.map((idx) => arrivalPool[idx]),
+        radarHeightFt,
+      );
+      if (shots.length === 0) continue;
       // Deal shots round-robin: pass after pass, one per missile.
       let s = 0;
       while (s < shots.length) {
@@ -436,7 +491,13 @@ function simulateDefense(arrivalPool: SimMissile[], layers: DefenseLayer[]): Sim
           const missileIdx = windowIdx[k];
           const m = arrivalPool[missileIdx];
           const shot = shots[s];
-          if (m.launchRangeNm >= shot.minRangeNm) {
+          // Within launch envelope and detectable within the radar horizon for
+          // this system's band (skimmers over the horizon for the whole band
+          // can't be engaged at all).
+          const reaches = m.launchRangeNm >= shot.minRangeNm;
+          const visible =
+            bandCoverage(m.altitudeFt, shot.minRangeNm, shot.maxRangeNm, radarHeightFt) > 0;
+          if (reaches && visible) {
             survival[missileIdx] *= 1 - shot.pk;
             shotUsed = true;
             s++;
@@ -460,13 +521,18 @@ function simulateDefense(arrivalPool: SimMissile[], layers: DefenseLayer[]): Sim
   return { layerResults, finalSurvival: survival };
 }
 
-function expandPool(salvos: Salvo[], arrivalTimes: number[]): SimMissile[] {
+function expandPool(
+  salvos: Salvo[],
+  arrivalTimes: number[],
+  missileById?: Map<string, Missile>,
+): SimMissile[] {
   const pool: SimMissile[] = [];
   for (let i = 0; i < salvos.length; i++) {
     const at = arrivalTimes[i] ?? 0;
     const launchRangeNm = salvos[i].rangeToTargetNm;
+    const altitudeFt = missileById?.get(salvos[i].missileId)?.altitudeFt ?? null;
     for (let j = 0; j < salvos[i].count; j++) {
-      pool.push({ arrivalTimeS: at, launchRangeNm });
+      pool.push({ arrivalTimeS: at, launchRangeNm, altitudeFt });
     }
   }
   return pool;
@@ -485,8 +551,15 @@ export function computeLayerBreakdown(
   salvos: Salvo[],
   arrivalTimes: number[],
   layers: DefenseLayer[],
+  missiles: Missile[] = [],
+  radarHeightFt: number = DEFAULT_RADAR_HEIGHT_FT,
 ): LayerResult[] {
-  return simulateDefense(expandPool(salvos, arrivalTimes), layers).layerResults;
+  const missileById = new Map(missiles.map((m) => [m.id, m]));
+  return simulateDefense(
+    expandPool(salvos, arrivalTimes, missileById),
+    layers,
+    radarHeightFt,
+  ).layerResults;
 }
 
 // Inverse of the forward model under perfect synchronization. The app drives
@@ -536,9 +609,11 @@ export function solveInverseSaturation(
   // Search 1..totalShots+1; the upper bound always saturates (pigeonhole).
   let minSaturatingSalvo = totalShots + 1;
   for (let nSalvo = 1; nSalvo <= totalShots + 1; nSalvo++) {
+    // Inverse capacity assumes a standard high-altitude attack (no horizon cap).
     const pool: SimMissile[] = new Array(nSalvo).fill(null).map(() => ({
       arrivalTimeS: 0,
       launchRangeNm: Number.POSITIVE_INFINITY,
+      altitudeFt: null,
     }));
     const { finalSurvival } = simulateDefense(pool, target.defenseLayers);
     if (leakProbability(finalSurvival) >= conf) {
@@ -560,7 +635,9 @@ export function computeSaturation(
   groupResult: GroupResult,
   salvos: Salvo[],
   target: TargetShip,
+  missiles: Missile[] = [],
   confidence: number = DEFAULT_SATURATION_CONFIDENCE,
+  radarHeightFt: number = DEFAULT_RADAR_HEIGHT_FT,
 ): SaturationResult {
   const bearings: number[] = [];
   let totalIncoming = 0;
@@ -577,9 +654,11 @@ export function computeSaturation(
   }
   const arrivalTimes = salvos.map((s) => arrivalBySalvoId.get(s.id) ?? 0);
 
+  const missileById = new Map(missiles.map((m) => [m.id, m]));
   const { layerResults, finalSurvival } = simulateDefense(
-    expandPool(salvos, arrivalTimes),
+    expandPool(salvos, arrivalTimes, missileById),
     target.defenseLayers,
+    radarHeightFt,
   );
 
   const hullImpacts = finalSurvival.reduce((a, b) => a + b, 0);

@@ -1,5 +1,6 @@
 import { useEffect, useState, createContext, useContext, type ReactNode } from 'react';
 import { db } from '../lib/db';
+import { DEFAULT_SEA_SKIM_ALT_FT } from '../lib/calc';
 import type { PresetsJson, SourceInfo, Missile } from '../types';
 
 type DbLoaderContextValue = {
@@ -20,6 +21,8 @@ const mapPresetToMissile = (p: any): Missile => {
     speedKnots: p.speedKnots ?? 500,
     maxRangeNm: p.maxRangeNm ?? 60,
     platform: p.role === 'ASW' ? 'submarine' : 'surface_ship',
+    // Sea-skimmers fly low → radar-horizon limited; others are treated as high.
+    altitudeFt: p.seaSkimming ? (p.seaSkimmingAltFt ?? DEFAULT_SEA_SKIM_ALT_FT) : null,
   };
 };
 

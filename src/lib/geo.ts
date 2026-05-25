@@ -50,3 +50,15 @@ export function distance(
   const dy = b.y - a.y;
   return Math.sqrt(dx * dx + dy * dy);
 }
+
+/**
+ * Radar horizon in nautical miles for a sensor at `radarHeightFt` looking at a
+ * target at `targetAltFt` (both feet), including standard atmospheric
+ * refraction: `1.23 × (√H_radar + √H_target)`. Negative heights clamp to 0.
+ */
+export function radarHorizonNm(radarHeightFt: number, targetAltFt: number): number {
+  return (
+    1.23 *
+    (Math.sqrt(Math.max(0, radarHeightFt)) + Math.sqrt(Math.max(0, targetAltFt)))
+  );
+}

@@ -37,6 +37,7 @@ function makeBlankScenario(name = 'New Scenario'): Scenario {
     simultaneityToleranceS: 10,
     repositionWarningThresholdS: 3600,
     saturationConfidence: 0.5,
+    radarHeightFt: 50,
     friendlyShips: [],
     targetShips: [],
   };

@@ -109,6 +109,27 @@ export function ResultsPanel() {
           />
           <span className="font-mono">%</span>
         </label>
+        <label className="flex items-center gap-2 text-xs text-textSecondary" title="Defending radar antenna height (ft). Caps how far SAMs reach against sea-skimming missiles via the radar horizon: 1.23 × (√H_radar + √H_missile) nm.">
+          Radar ht
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            step={5}
+            value={activeScenario.radarHeightFt}
+            onChange={(e) => {
+              const ft = Number(e.target.value);
+              const clamped = Math.min(1000, Math.max(1, Number.isFinite(ft) ? ft : 50));
+              dispatch({
+                type: 'UPDATE_SCENARIO',
+                id: activeScenario.id,
+                patch: { radarHeightFt: clamped },
+              });
+            }}
+            className="w-16 rounded border border-panelBorder bg-navy px-2 py-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
+          />
+          <span className="font-mono">ft</span>
+        </label>
         <label className="flex items-center gap-2 text-xs text-textSecondary">
           H-hour
           <input
@@ -202,8 +223,15 @@ function TargetResultSection({
 
   const saturation: SaturationResult | null = useMemo(() => {
     if (!group) return null;
-    return computeSaturation(group, salvos, target, scenario.saturationConfidence);
-  }, [group, salvos, target, scenario.saturationConfidence]);
+    return computeSaturation(
+      group,
+      salvos,
+      target,
+      missiles,
+      scenario.saturationConfidence,
+      scenario.radarHeightFt,
+    );
+  }, [group, salvos, target, missiles, scenario.saturationConfidence, scenario.radarHeightFt]);
 
   // Inverse solver — depends only on the target's defenses, so it's a planning
   // figure that's meaningful even before any salvo is assigned.

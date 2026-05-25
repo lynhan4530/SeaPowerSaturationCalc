@@ -6,6 +6,12 @@ export type Missile = {
   speedKnots: number;
   maxRangeNm: number;
   platform: Platform;
+  /**
+   * Cruise altitude in feet, used for radar-horizon range capping of defending
+   * SAMs. `undefined`/`null` means "high altitude" — no horizon cap applied.
+   * Only sea-skimming missiles carry a finite value (from preset data).
+   */
+  altitudeFt?: number | null;
 };
 
 export type Salvo = {
@@ -76,6 +82,12 @@ export type Scenario = {
   repositionWarningThresholdS: number;
   /** Leak-probability threshold for the SATURATED verdict and inverse solver, 0..1. */
   saturationConfidence: number;
+  /**
+   * General defending-radar antenna height in feet, used in the radar-horizon
+   * formula to cap SAM reach against sea-skimming attackers. One value for the
+   * whole scenario (default 50).
+   */
+  radarHeightFt: number;
   friendlyShips: FriendlyShip[];
   targetShips: TargetShip[];
 };

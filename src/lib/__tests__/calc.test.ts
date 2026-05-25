@@ -17,6 +17,7 @@ import {
   solveIntercept,
   solveInverseSaturation,
 } from '../calc';
+import { radarHorizonNm } from '../geo';
 import { migrateScenario } from '../storage';
 
 let nextId = 0;
@@ -126,6 +127,7 @@ const scenario = (
   simultaneityToleranceS: 10,
   repositionWarningThresholdS: 3600,
   saturationConfidence: 0.5,
+  radarHeightFt: 50,
   friendlyShips: ships,
   targetShips: targets,
   ...overrides,
@@ -139,7 +141,7 @@ const satFor = (tgt: TargetShip, count: number, confidence = 0.5) => {
   const sh = ship('A', 0, [s]);
   const sc = scenario([sh], [tgt], { saturationConfidence: confidence });
   const g = solveGroup([sh], [s], [m], tgt, sc);
-  return computeSaturation(g, [s], tgt, confidence);
+  return computeSaturation(g, [s], tgt, [m], confidence);
 };
 
 // ───────── Solver ─────────
@@ -723,6 +725,50 @@ describe('TC-55: survival probability compounds across layers', () => {
     const sat = satFor(tgt, 1);
     expect(sat.hullImpacts).toBeCloseTo(0.25, 6);
     expect(sat.saturationProbability).toBeCloseTo(0.25, 6);
+  });
+});
+
+// ───────── Radar horizon (deviation #6) ─────────
+
+describe('TC-56: radar horizon formula', () => {
+  it('1.23 × (√50 + √30) ≈ 15.43 nm', () => {
+    expect(radarHorizonNm(50, 30)).toBeCloseTo(15.43, 1);
+  });
+  it('clamps negative heights to 0', () => {
+    expect(radarHorizonNm(-10, -5)).toBe(0);
+  });
+});
+
+describe('TC-57: sea-skimmer cuts an area SAM down via the horizon', () => {
+  it('SM-2 (4ch, min2/max90) scaled to ~1 shot vs a 30 ft skimmer', () => {
+    const sm2 = sysLayer('SM-2', 30, [ws(1, 4, 1, { minRangeNm: 2, maxRangeNm: 90 })]);
+    // coverage = (15.43 − 2)/(90 − 2) ≈ 0.153 → round(4 × 0.153) = 1 shot.
+    const m = { ...missile('Harpoon', 500, 100), altitudeFt: 30 };
+    const s = salvo(m.id, 't', 4, 50, 0);
+    const result = computeLayerBreakdown([s], [0], [sm2], [m], 50);
+    expect(result[0].incoming).toBe(4);
+    expect(result[0].intercepted).toBe(1);
+    expect(result[0].leakers).toBe(3);
+  });
+});
+
+describe('TC-58: high-altitude attacker is unaffected by the horizon', () => {
+  it('no altitude → full 4 shots, all intercepted', () => {
+    const sm2 = sysLayer('SM-2', 30, [ws(1, 4, 1, { minRangeNm: 2, maxRangeNm: 90 })]);
+    const m = missile('AS-4', 500, 100); // altitudeFt undefined → treated as high
+    const s = salvo(m.id, 't', 4, 50, 0);
+    const result = computeLayerBreakdown([s], [0], [sm2], [m], 50);
+    expect(result[0]).toMatchObject({ incoming: 4, intercepted: 4, leakers: 0 });
+  });
+});
+
+describe('TC-59: short-range system within the horizon keeps full shots', () => {
+  it('CIWS (max 1.5 nm) unaffected vs a 30 ft skimmer', () => {
+    const ciws = sysLayer('CIWS', 5, [ws(1, 4, 1, { minRangeNm: 0, maxRangeNm: 1.5 })]);
+    const m = { ...missile('Harpoon', 500, 100), altitudeFt: 30 };
+    const s = salvo(m.id, 't', 4, 50, 0);
+    const result = computeLayerBreakdown([s], [0], [ciws], [m], 50);
+    expect(result[0]).toMatchObject({ incoming: 4, intercepted: 4, leakers: 0 });
   });
 });
 

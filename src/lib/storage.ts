@@ -11,6 +11,7 @@ const STORAGE_KEY = 'sps:state';
 const HISTORY_KEY = 'sps:history';
 
 const DEFAULT_SATURATION_CONFIDENCE = 0.5;
+const DEFAULT_RADAR_HEIGHT_FT = 50;
 const VALID_GUIDANCE: GuidanceType[] = ['SARH', 'ARH', 'gun'];
 
 // ───────── Phase 2 migration ─────────
@@ -92,6 +93,7 @@ export function migrateScenario(raw: Scenario): Scenario {
   return {
     ...raw,
     saturationConfidence: raw.saturationConfidence ?? DEFAULT_SATURATION_CONFIDENCE,
+    radarHeightFt: raw.radarHeightFt ?? DEFAULT_RADAR_HEIGHT_FT,
     targetShips: (raw.targetShips ?? []).map((t) => ({
       ...t,
       defenseLayers: (t.defenseLayers ?? []).map((l) => migrateLayer(l as RawLayer)),

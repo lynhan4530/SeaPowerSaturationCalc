@@ -65,6 +65,7 @@ for the full plan. The original six stages are **all shipped**:
 - **GitHub Pages Deployment** ✅ — see section below.
 - **Envelope-Checking Fix** ✅ — see section below.
 - **Preset Input Locking + Tooltips** ✅ — see section below.
+- **Radar Horizon SAM Range Capping** ✅ — see section below.
 
 ---
 
@@ -138,10 +139,45 @@ defense layer parameters) that were auto-populated from the game data.
 
 ---
 
+### Radar Horizon SAM Range Capping ✅
+
+Sea-skimming missiles hide below the radar horizon, so a defender's long-range
+area SAM is far less effective against them than against a high-altitude threat.
+The model now scales each weapon system's per-window shot count by the fraction
+of its engagement band within the radar horizon.
+
+**Physics:** `horizon_nm = 1.23 × (√H_radar + √H_missile)` (heights in feet) —
+`radarHorizonNm()` in `geo.ts` (pure).
+
+**Model (proportional shots):** per window, each engaging system contributes
+`round(channels × engagementsPerChannel × avgCoverage)` shots, where
+`coverage = clamp01((horizon − minRange) / (maxRange − minRange))` averaged over
+the window's missiles. `bandCoverage()` + `windowShots()` in `calc.ts`. A missile
+whose coverage is 0 (over the horizon for the whole band) cannot be engaged by
+that system at all.
+
+**Data flow:**
+- Attacker altitude rides on the calc `Missile` as `altitudeFt?: number | null`.
+  `mapPresetToMissile` (`useDbLoader.tsx`) sets it from `seaSkimming` /
+  `seaSkimmingAltFt` (fallback `DEFAULT_SEA_SKIM_ALT_FT = 30`). **Non-sea-skimmers
+  and manual library missiles get `null` ⇒ no cap** (treated as high altitude).
+- Defender radar height is a **general scenario-level setting** —
+  `Scenario.radarHeightFt` (default `50`), editable in the Results header
+  ("Radar ht", ft), migrated by `storage.ts`. Threaded into `computeSaturation`
+  and `simulateDefense`.
+
+**Reduces to legacy:** `altitudeFt == null` ⇒ `coverage = 1` ⇒
+`round(channels × eng × 1)` = the old shot count, so every prior test and saved
+scenario is unchanged. The inverse solver assumes a high-altitude attack (no
+cap). Tests TC-56..59.
+
+---
+
 ## PRD deviations (decided with user — do not silently revert)
 
-The PRD has five internal inconsistencies that were resolved before coding.
-**These take precedence over PRD wording.**
+The PRD had five internal inconsistencies that were resolved before coding;
+deviation #6 (radar horizon) was added post-launch. **These take precedence over
+PRD wording.**
 
 | # | Topic | Rule |
 |---|---|---|
@@ -150,6 +186,7 @@ The PRD has five internal inconsistencies that were resolved before coding.
 | 3 | Target closing the gap | **Pre-check before iterative loop.** If target is closing on a stationary ship, set `repositionTimeS = 0` and `waitTimeS = (range - missileMaxRange) / targetClosingSpeed * 3600`. Required for TC-10. |
 | 4 | Defense-layer window timing | **Sliding window from first arrival in each layer.** First arrival opens window 0; arrivals within `windowS` of it stay in window 0; first outside opens window 1. |
 | 5 | Defense-layer envelope check | **At launch range, not arrival range.** A weapon system engages iff `salvo.rangeToTargetNm >= ws.minRangeNm`. This replaced the original "check at range ≈ 0" rule which broke all SAMs with a positive minimum range. Post-Phase 2 this check is **per shot** inside `simulateDefense()`. |
+| 6 | Radar horizon cap | **Proportional shot scaling, not a hard max-range gate.** A system's per-window shots are scaled by `coverage = clamp01((horizon − minRange)/(maxRange − minRange))`, `horizon = 1.23×(√H_radar + √H_missile)`. `null` attacker altitude ⇒ `coverage = 1` ⇒ legacy behavior. Radar height is the scenario-level `radarHeightFt` (default 50). See the section above. |
 
 ## File structure
 
@@ -205,9 +242,12 @@ layout. Drag-to-reorder is **only** for defense layers in Stage 2.
 
 ## Future considerations
 
-- **Radar horizon / Earth curvature** — Sea-skimming missiles (e.g. Harpoon at 30 ft)
-  have a much shorter detection range than high-altitude missiles (e.g. AS-4 at
-  30,000 ft). The formula `horizon_nm ≈ 1.23 × (√H_radar + √H_missile)` could cap
-  effective SAM `maxRangeNm` based on missile altitude. The game data already has
-  `seaSkimming` and `seaSkimmingAltFt` fields in `MissilePreset`. Not yet implemented
-  — user decided to fix the basic envelope logic first and revisit later.
+- **Per-target / preset-driven radar height** — `radarHeightFt` is currently one
+  general scenario-level value (default 50). Could become per-target (different
+  ship classes have different mast heights) once antenna-height data is available;
+  the game presets don't expose it today.
+- **Monte-Carlo shoot-look-shoot** — `PHASE2_DESIGN.md §6.1`: re-engagements
+  currently hit fresh threats, not confirmed kills.
+- **Data-drive `vesselSync.ts` heuristics** — ARH channels hardcoded to 8,
+  `engagementsPerChannel` always 1, CIWS maxRange 1.5 nm, area/point split at
+  15 nm — all candidates to source from real data.

@@ -149,7 +149,13 @@ New scenario default: `saturationConfidence: 0.5`.
 4. **Data dependency:** `channels` (from `sensors.ini WeaponChannels`) and `pk`
    (from `weapons.ini MissileInterceptChance`) come from the handed-off parser.
    The model + UI are built now against manually-entered numbers; parser fills
-   them later with no rewrite.
+   them later with no rewrite. *(Resolved — supplied by the IndexedDB presets via
+   `vesselSync.ts`.)*
+
+**Update (post-launch):** a radar-horizon cap now scales each system's per-window
+shots against sea-skimming attackers — see CLAUDE.md "Radar Horizon SAM Range
+Capping" and deviation #6. `altitudeFt == null` ⇒ no cap, so this design's math is
+unchanged for high-altitude raids.
 
 ---
 
