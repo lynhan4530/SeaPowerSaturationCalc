@@ -6,6 +6,7 @@ type Props = {
   scenarioId: string;
   targetId: string;
   layers: DefenseLayer[];
+  isPreset?: boolean;
 };
 
 const NUM_CLS =
@@ -13,7 +14,7 @@ const NUM_CLS =
 
 const GUIDANCE_OPTIONS: GuidanceType[] = ['SARH', 'ARH', 'gun'];
 
-export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
+export function DefenseLayerEditor({ scenarioId, targetId, layers, isPreset = false }: Props) {
   const { dispatch } = useScenario();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
@@ -76,12 +77,14 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
         <h4 className="text-xs font-bold uppercase tracking-widest text-textSecondary">
           Defense layers (outermost first)
         </h4>
-        <button
-          onClick={() => dispatch({ type: 'ADD_DEFENSE_LAYER', scenarioId, targetId })}
-          className="rounded border border-panelBorder px-2 py-0.5 font-mono text-xs uppercase tracking-wider text-textSecondary hover:border-skyAccent/50 hover:text-textPrimary"
-        >
-          + Layer
-        </button>
+        {!isPreset && (
+          <button
+            onClick={() => dispatch({ type: 'ADD_DEFENSE_LAYER', scenarioId, targetId })}
+            className="rounded border border-panelBorder px-2 py-0.5 font-mono text-xs uppercase tracking-wider text-textSecondary hover:border-skyAccent/50 hover:text-textPrimary"
+          >
+            + Layer
+          </button>
+        )}
       </div>
       {layers.length === 0 ? (
         <p className="text-xs italic text-textSecondary">No defense layers.</p>
@@ -99,37 +102,45 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                 <span className="pointer-events-none absolute -top-0.5 left-0 right-0 block h-0.5 bg-greenAccent" />
               )}
               <div className="flex items-center gap-2 px-2 py-1">
-                <span
-                  onPointerDown={(e) => onPointerDown(e, layer.id)}
-                  onPointerMove={onPointerMove}
-                  onPointerUp={onPointerUp}
-                  className="cursor-grab select-none px-1 text-textSecondary"
-                  title="Drag to reorder"
-                >
-                  &#x2630;
-                </span>
+                {!isPreset && (
+                  <span
+                    onPointerDown={(e) => onPointerDown(e, layer.id)}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    className="cursor-grab select-none px-1 text-textSecondary"
+                    title="Drag to reorder"
+                  >
+                    &#x2630;
+                  </span>
+                )}
                 <input
                   type="text"
                   value={layer.name}
                   onChange={(e) => update(layer.id, { name: e.target.value })}
-                  className="flex-1 bg-transparent text-sm text-textPrimary outline-none"
+                  disabled={isPreset}
+                  className="flex-1 bg-transparent text-sm text-textPrimary outline-none disabled:text-textSecondary/80"
                 />
-                <button
-                  onClick={() =>
-                    dispatch({
-                      type: 'DELETE_DEFENSE_LAYER',
-                      scenarioId,
-                      targetId,
-                      layerId: layer.id,
-                    })
-                  }
-                  className="text-xs text-redAccent hover:underline"
-                >
-                  Delete
-                </button>
+                {!isPreset && (
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: 'DELETE_DEFENSE_LAYER',
+                        scenarioId,
+                        targetId,
+                        layerId: layer.id,
+                      })
+                    }
+                    className="text-xs text-redAccent hover:underline"
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
               <div className="space-y-2 px-3 pb-2 text-xs text-textSecondary">
-                <label className="flex items-center gap-1">
+                <label 
+                  className="flex items-center gap-1 cursor-help"
+                  title="The sliding window duration in seconds during which incoming missiles are grouped together for defense allocation."
+                >
                   Window (s)
                   <input
                     type="number"
@@ -137,7 +148,8 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                     step={0.5}
                     value={layer.windowS}
                     onChange={(e) => update(layer.id, { windowS: Number(e.target.value) })}
-                    className={`ml-auto ${NUM_CLS}`}
+                    disabled={isPreset}
+                    className={`ml-auto ${NUM_CLS} disabled:opacity-70 disabled:cursor-not-allowed`}
                   />
                 </label>
 
@@ -145,19 +157,21 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                   <span className="font-bold uppercase tracking-wider text-textSecondary/80">
                     Weapon systems
                   </span>
-                  <button
-                    onClick={() =>
-                      dispatch({
-                        type: 'ADD_WEAPON_SYSTEM',
-                        scenarioId,
-                        targetId,
-                        layerId: layer.id,
-                      })
-                    }
-                    className="rounded border border-panelBorder px-2 py-0.5 font-mono uppercase tracking-wider text-textSecondary hover:border-skyAccent/50 hover:text-textPrimary"
-                  >
-                    + System
-                  </button>
+                  {!isPreset && (
+                    <button
+                      onClick={() =>
+                        dispatch({
+                          type: 'ADD_WEAPON_SYSTEM',
+                          scenarioId,
+                          targetId,
+                          layerId: layer.id,
+                        })
+                      }
+                      className="rounded border border-panelBorder px-2 py-0.5 font-mono uppercase tracking-wider text-textSecondary hover:border-skyAccent/50 hover:text-textPrimary"
+                    >
+                      + System
+                    </button>
+                  )}
                 </div>
 
                 {layer.weaponSystems.length === 0 ? (
@@ -176,7 +190,8 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                             type="text"
                             value={ws.name}
                             onChange={(e) => updateSystem(layer.id, ws.id, { name: e.target.value })}
-                            className="flex-1 bg-transparent text-textPrimary outline-none"
+                            disabled={isPreset}
+                            className="flex-1 bg-transparent text-textPrimary outline-none disabled:text-textSecondary/80"
                           />
                           <select
                             value={ws.guidance}
@@ -185,7 +200,8 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                                 guidance: e.target.value as GuidanceType,
                               })
                             }
-                            className="rounded border border-panelBorder bg-navy px-1 py-0.5 font-mono text-textPrimary outline-none focus:border-skyAccent"
+                            disabled={isPreset}
+                            className="rounded border border-panelBorder bg-navy px-1 py-0.5 font-mono text-textPrimary outline-none focus:border-skyAccent disabled:opacity-75 disabled:cursor-not-allowed"
                           >
                             {GUIDANCE_OPTIONS.map((g) => (
                               <option key={g} value={g}>
@@ -193,24 +209,29 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                               </option>
                             ))}
                           </select>
-                          <button
-                            onClick={() =>
-                              dispatch({
-                                type: 'DELETE_WEAPON_SYSTEM',
-                                scenarioId,
-                                targetId,
-                                layerId: layer.id,
-                                systemId: ws.id,
-                              })
-                            }
-                            className="text-redAccent hover:underline"
-                            title="Remove weapon system"
-                          >
-                            &times;
-                          </button>
+                          {!isPreset && (
+                            <button
+                              onClick={() =>
+                                dispatch({
+                                  type: 'DELETE_WEAPON_SYSTEM',
+                                  scenarioId,
+                                  targetId,
+                                  layerId: layer.id,
+                                  systemId: ws.id,
+                                })
+                              }
+                              className="text-redAccent hover:underline"
+                              title="Remove weapon system"
+                            >
+                              &times;
+                            </button>
+                          )}
                         </div>
                         <div className="grid grid-cols-3 gap-2">
-                          <label className="flex flex-col gap-0.5">
+                          <label 
+                            className="flex flex-col gap-0.5 cursor-help"
+                            title="Number of simultaneous guidance channels (e.g. radar illuminators or fire control loops). Limits how many missiles can be guided at once."
+                          >
                             <span className="text-[10px] uppercase tracking-wider">Channels</span>
                             <input
                               type="number"
@@ -219,10 +240,14 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                               onChange={(e) =>
                                 updateSystem(layer.id, ws.id, { channels: Number(e.target.value) })
                               }
-                              className={`w-full ${NUM_CLS}`}
+                              disabled={isPreset}
+                              className={`w-full ${NUM_CLS} disabled:opacity-70 disabled:cursor-not-allowed`}
                             />
                           </label>
-                          <label className="flex flex-col gap-0.5">
+                          <label 
+                            className="flex flex-col gap-0.5 cursor-help"
+                            title="Re-engagements per channel. The number of defensive shots a single channel can guide in succession within one window."
+                          >
                             <span className="text-[10px] uppercase tracking-wider">Eng/ch</span>
                             <input
                               type="number"
@@ -233,10 +258,14 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                                   engagementsPerChannel: Number(e.target.value),
                                 })
                               }
-                              className={`w-full ${NUM_CLS}`}
+                              disabled={isPreset}
+                              className={`w-full ${NUM_CLS} disabled:opacity-70 disabled:cursor-not-allowed`}
                             />
                           </label>
-                          <label className="flex flex-col gap-0.5">
+                          <label 
+                            className="flex flex-col gap-0.5 cursor-help"
+                            title="Single-shot probability of kill. The chance (0 to 1) that a single defensive shot intercepts its target."
+                          >
                             <span className="text-[10px] uppercase tracking-wider">Pk</span>
                             <input
                               type="number"
@@ -247,10 +276,14 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                               onChange={(e) =>
                                 updateSystem(layer.id, ws.id, { pk: Number(e.target.value) })
                               }
-                              className={`w-full ${NUM_CLS}`}
+                              disabled={isPreset}
+                              className={`w-full ${NUM_CLS} disabled:opacity-70 disabled:cursor-not-allowed`}
                             />
                           </label>
-                          <label className="flex flex-col gap-0.5">
+                          <label 
+                            className="flex flex-col gap-0.5 cursor-help"
+                            title="Minimum engagement range in nautical miles. Defensive systems cannot engage targets closer than this range."
+                          >
                             <span className="text-[10px] uppercase tracking-wider">Min nm</span>
                             <input
                               type="number"
@@ -263,10 +296,14 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                                     e.target.value === '' ? undefined : Number(e.target.value),
                                 })
                               }
-                              className={`w-full ${NUM_CLS}`}
+                              disabled={isPreset}
+                              className={`w-full ${NUM_CLS} disabled:opacity-70 disabled:cursor-not-allowed`}
                             />
                           </label>
-                          <label className="flex flex-col gap-0.5">
+                          <label 
+                            className="flex flex-col gap-0.5 cursor-help"
+                            title="Maximum engagement range in nautical miles. The physical limit of the weapon system's reach."
+                          >
                             <span className="text-[10px] uppercase tracking-wider">Max nm</span>
                             <input
                               type="number"
@@ -279,7 +316,8 @@ export function DefenseLayerEditor({ scenarioId, targetId, layers }: Props) {
                                     e.target.value === '' ? undefined : Number(e.target.value),
                                 })
                               }
-                              className={`w-full ${NUM_CLS}`}
+                              disabled={isPreset}
+                              className={`w-full ${NUM_CLS} disabled:opacity-70 disabled:cursor-not-allowed`}
                             />
                           </label>
                         </div>

@@ -306,24 +306,32 @@ function FriendlyShipCard({
         )}
 
         <div className="grid grid-cols-2 gap-2 text-xs text-textSecondary">
-          <label className="flex items-center gap-1">
+          <label 
+            className="flex items-center gap-1 cursor-help"
+            title="Maximum speed of the ship class (in knots). Used to calculate repositioning time for short-range weapons."
+          >
             Speed (kts)
             <input
               type="number"
               min={0}
               value={ship.speedKnots}
               onChange={(e) => update({ speedKnots: Number(e.target.value) })}
-              className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
+              disabled={!!ship.presetId}
+              className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20 disabled:opacity-70 disabled:cursor-not-allowed"
             />
           </label>
-          <label className="flex items-center gap-1">
+          <label 
+            className="flex items-center gap-1 cursor-help"
+            title="Total missile magazine capacity. Shows a warning if loaded salvos exceed this limit."
+          >
             Magazine
             <input
               type="number"
               min={0}
               value={ship.magazineSize}
               onChange={(e) => update({ magazineSize: Number(e.target.value) })}
-              className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
+              disabled={!!ship.presetId}
+              className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20 disabled:opacity-70 disabled:cursor-not-allowed"
             />
           </label>
         </div>
@@ -393,7 +401,10 @@ function SalvoRow({
   return (
     <div className="rounded border border-panelBorder/60 bg-panel p-2">
       <div className="grid grid-cols-2 gap-2 text-xs text-textSecondary">
-        <label className="col-span-2 flex items-center gap-1">
+        <label 
+          className="col-span-2 flex items-center gap-1 cursor-help"
+          title="Type of missile to fire. Filtered to only show missiles compatible with this vessel's active launchers."
+        >
           Missile
           <select
             value={salvo.missileId}
@@ -408,7 +419,10 @@ function SalvoRow({
             ))}
           </select>
         </label>
-        <label className="col-span-2 flex items-center gap-1">
+        <label 
+          className="col-span-2 flex items-center gap-1 cursor-help"
+          title="The target ship for this salvo."
+        >
           Target
           <select
             value={salvo.targetId}
@@ -423,7 +437,10 @@ function SalvoRow({
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-1">
+        <label 
+          className="flex items-center gap-1 cursor-help"
+          title="Number of missiles in this salvo."
+        >
           Count
           <input
             type="number"
@@ -433,7 +450,10 @@ function SalvoRow({
             className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
           />
         </label>
-        <label className="flex items-center gap-1">
+        <label 
+          className="flex items-center gap-1 cursor-help"
+          title="Initial range to target at launch (in nautical miles)."
+        >
           Range (nm)
           <input
             type="number"
@@ -444,7 +464,7 @@ function SalvoRow({
           />
         </label>
         <div className="col-span-2 flex items-center justify-between gap-2">
-          <span>Bearing</span>
+          <span className="cursor-help" title="Initial bearing to target at launch (in degrees).">Bearing</span>
           <CompassInput
             value={salvo.bearingToTargetDeg}
             onChange={(deg) => update({ bearingToTargetDeg: deg })}
@@ -572,18 +592,22 @@ function TargetShipCard({
         )}
 
         <div className="grid grid-cols-2 gap-2 text-xs text-textSecondary">
-          <label className="flex items-center gap-1">
+          <label 
+            className="flex items-center gap-1 cursor-help"
+            title="Speed of the target ship (in knots). Used to calculate intercept geometry and repositioning time."
+          >
             Speed (kts)
             <input
               type="number"
               min={0}
               value={target.speedKnots}
               onChange={(e) => update({ speedKnots: Number(e.target.value) })}
-              className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20"
+              disabled={!!target.presetId}
+              className="ml-auto w-16 rounded border border-panelBorder bg-navy px-1 text-right font-mono text-textPrimary outline-none focus:border-skyAccent focus:ring-1 focus:ring-skyAccent/20 disabled:opacity-70 disabled:cursor-not-allowed"
             />
           </label>
           <div className="flex items-center justify-between gap-1 col-span-1">
-            <span>Heading</span>
+            <span className="cursor-help" title="The target's current heading/course (in degrees). Used to calculate intercept geometry.">Heading</span>
             <CompassInput
               value={target.headingDeg}
               onChange={(deg) => update({ headingDeg: deg })}
@@ -599,6 +623,7 @@ function TargetShipCard({
           scenarioId={scenarioId}
           targetId={target.id}
           layers={target.defenseLayers}
+          isPreset={!!target.presetId}
         />
       </div>
     </div>
