@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useScenario } from '../hooks/useScenario';
+import { useDbLoader } from '../hooks/useDbLoader';
 import {
   computeSaturation,
   solveGroup,
@@ -57,6 +58,15 @@ function shipStatus(r: InterceptResult): ShipStatus {
 
 export function ResultsPanel() {
   const { activeScenario, state, dispatch } = useScenario();
+  const { dbMissiles } = useDbLoader();
+
+  const allMissiles = useMemo(() => {
+    const seen = new Set(state.missileLibrary.map((m) => m.id));
+    return [
+      ...state.missileLibrary,
+      ...dbMissiles.filter((m) => !seen.has(m.id)),
+    ];
+  }, [state.missileLibrary, dbMissiles]);
 
   if (!activeScenario) {
     return (
@@ -134,7 +144,7 @@ export function ResultsPanel() {
             key={target.id}
             target={target}
             ships={activeScenario.friendlyShips}
-            missiles={state.missileLibrary}
+            missiles={allMissiles}
             scenario={activeScenario}
             hHourBase={hHourBase}
             shipColorById={shipColorById}

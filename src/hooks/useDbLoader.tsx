@@ -1,22 +1,34 @@
 import { useEffect, useState, createContext, useContext, type ReactNode } from 'react';
 import { db } from '../lib/db';
-import type { PresetsJson, SourceInfo } from '../types';
+import type { PresetsJson, SourceInfo, Missile } from '../types';
 
 type DbLoaderContextValue = {
   loading: boolean;
   error: string | null;
   syncDate: string | null;
   sources: SourceInfo[];
+  dbMissiles: Missile[];
   syncDatabase: (presets: PresetsJson) => Promise<void>;
 };
 
 const DbLoaderContext = createContext<DbLoaderContextValue | null>(null);
+
+const mapPresetToMissile = (p: any): Missile => {
+  return {
+    id: p.id,
+    name: p.name,
+    speedKnots: p.speedKnots ?? 500,
+    maxRangeNm: p.maxRangeNm ?? 60,
+    platform: p.role === 'ASW' ? 'submarine' : 'surface_ship',
+  };
+};
 
 export function DbLoaderProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncDate, setSyncDate] = useState<string | null>(null);
   const [sources, setSources] = useState<SourceInfo[]>([]);
+  const [dbMissiles, setDbMissiles] = useState<Missile[]>([]);
 
   const loadAndSeed = async () => {
     try {
@@ -34,6 +46,10 @@ export function DbLoaderProvider({ children }: { children: ReactNode }) {
       } else {
         const dbSources = await db.sources.toArray();
         setSources(dbSources);
+        
+        const presets = await db.missiles.toArray();
+        setDbMissiles(presets.map(mapPresetToMissile));
+        
         setSyncDate(lastSync);
       }
     } catch (err: any) {
@@ -63,6 +79,7 @@ export function DbLoaderProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('sea-power-db-sync-date', now);
     setSyncDate(now);
     setSources(data.sources);
+    setDbMissiles(data.missiles.map(mapPresetToMissile));
   };
 
   const syncDatabase = async (presets: PresetsJson) => {
@@ -83,7 +100,7 @@ export function DbLoaderProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <DbLoaderContext.Provider value={{ loading, error, syncDate, sources, syncDatabase }}>
+    <DbLoaderContext.Provider value={{ loading, error, syncDate, sources, dbMissiles, syncDatabase }}>
       {children}
     </DbLoaderContext.Provider>
   );

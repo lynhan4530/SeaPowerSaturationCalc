@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useScenario } from '../hooks/useScenario';
+import { useDbLoader } from '../hooks/useDbLoader';
 import { solveGroup, type GroupResult, type InterceptResult } from '../lib/calc';
 import {
   SHIP_PALETTE,
@@ -33,6 +34,16 @@ const clamp = (v: number, lo: number, hi: number): number =>
 
 export function Timeline() {
   const { activeScenario, state } = useScenario();
+  const { dbMissiles } = useDbLoader();
+
+  const allMissiles = useMemo(() => {
+    const seen = new Set(state.missileLibrary.map((m) => m.id));
+    return [
+      ...state.missileLibrary,
+      ...dbMissiles.filter((m) => !seen.has(m.id)),
+    ];
+  }, [state.missileLibrary, dbMissiles]);
+
   if (!activeScenario) return null;
 
   const hHourBase = activeScenario.hHour ? parseHHMMSS(activeScenario.hHour) : null;
@@ -48,7 +59,7 @@ export function Timeline() {
       sh.salvos.some(
         (sv) =>
           sv.targetId === t.id &&
-          state.missileLibrary.some((m) => m.id === sv.missileId),
+          allMissiles.some((m) => m.id === sv.missileId),
       ),
     ),
   );
@@ -72,7 +83,7 @@ export function Timeline() {
             key={target.id}
             target={target}
             ships={activeScenario.friendlyShips}
-            missiles={state.missileLibrary}
+            missiles={allMissiles}
             scenario={activeScenario}
             hHourBase={hHourBase}
             shipColorById={shipColorById}
