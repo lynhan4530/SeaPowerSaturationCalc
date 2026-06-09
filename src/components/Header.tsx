@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useScenario, useUndoRedo } from '../hooks/useScenario';
 import { downloadScenarioJson, importScenarios } from '../lib/storage';
 import { useDbLoader } from '../hooks/useDbLoader';
+import { isFileSystemAccessSupported, pickAndExtract } from '../lib/extractor/browser';
 
 type Props = {
   onOpenMissileLibrary: () => void;
@@ -16,8 +17,10 @@ export function Header({ onOpenMissileLibrary }: Props) {
   const [draft, setDraft] = useState('');
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [loadingFolder, setLoadingFolder] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dbInputRef = useRef<HTMLInputElement>(null);
+  const supportsFolder = isFileSystemAccessSupported();
 
   useEffect(() => {
     if (!notice) return;
@@ -79,6 +82,30 @@ export function Header({ onOpenMissileLibrary }: Props) {
     } catch (err: any) {
       console.error(err);
       setNotice(`Sync failed — ${err.message || 'invalid presets.json format'}`);
+    }
+  };
+
+  const onLoadFromFolder = async () => {
+    setLoadingFolder(true);
+    setNotice('Reading game files from your Sea Power folder…');
+    try {
+      const { presets, warnings } = await pickAndExtract();
+      await syncDatabase(presets);
+      const counts = `${presets.missiles.length} missiles, ${presets.launchers.length} launchers, ${presets.illuminators.length} illuminators, ${presets.ships.length} ships`;
+      const warn = warnings.length
+        ? ` — ${warnings.length} warning${warnings.length === 1 ? '' : 's'} (first: ${warnings[0]})`
+        : '';
+      setNotice(`Loaded from game folder: ${counts}.${warn}`);
+    } catch (err: any) {
+      // The user cancelling the folder picker is not an error.
+      if (err?.name === 'AbortError') {
+        setNotice(null);
+        return;
+      }
+      console.error(err);
+      setNotice(`Load failed — ${err?.message || 'could not read the game folder'}`);
+    } finally {
+      setLoadingFolder(false);
     }
   };
 
@@ -220,10 +247,24 @@ export function Header({ onOpenMissileLibrary }: Props) {
           <button onClick={onOpenMissileLibrary} className={toolBtn}>
             Missile Library
           </button>
+          {supportsFolder && (
+            <button
+              onClick={() => void onLoadFromFolder()}
+              disabled={loadingFolder}
+              className={`${toolBtn} border-greenAccent/30 hover:border-greenAccent text-greenAccent`}
+              title="Read your installed Sea Power game (and workshop mods) straight from disk — pick your Steam library, 'steamapps', or 'Sea Power' folder. No separate tool needed."
+            >
+              {loadingFolder ? 'Reading…' : 'Load from Game Folder'}
+            </button>
+          )}
           <button
             onClick={() => dbInputRef.current?.click()}
             className={`${toolBtn} border-amberAccent/30 hover:border-amberAccent text-amberAccent`}
-            title={syncDate ? `Database last synced: ${syncDate}` : 'Click to load custom mod presets.json'}
+            title={
+              syncDate
+                ? `Database last synced: ${syncDate}. Upload a presets.json produced by the extractor tool.`
+                : 'Upload a presets.json produced by the extractor tool'
+            }
           >
             {syncDate ? 'Sync Game Data ✓' : 'Sync Game Data'}
           </button>

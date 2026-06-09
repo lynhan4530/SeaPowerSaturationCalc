@@ -67,6 +67,7 @@ for the full plan. The original six stages are **all shipped**:
 - **Preset Input Locking + Tooltips** ✅ — see section below.
 - **Radar Horizon SAM Range Capping** ✅ — see section below.
 - **Preset Consuming Adapter (engagementsPerChannel derivation)** ✅ — see section below.
+- **In-Browser Game-Data Extraction (File System Access)** ✅ — see section below.
 
 ---
 
@@ -229,6 +230,54 @@ undisturbed.
 
 ---
 
+### In-Browser Game-Data Extraction (File System Access) ✅
+
+Removes the only step that needed a Node CLI: the app can now read an installed
+*Sea Power* (base game **+ workshop mods**) straight from disk and seed IndexedDB
+itself — no separate extractor tool, no `presets.json` to shuffle. Header button
+**"Load from Game Folder"** (green; shown only when the browser supports the
+File System Access API — Chrome/Edge desktop). The legacy **"Sync Game Data"**
+JSON upload stays as the universal fallback.
+
+**Approach:** the `SeaPowerDataExtraction` parser is pure TS except its `node:fs`
+discovery layer, so it was **vendored** into `src/lib/extractor/` with only that
+layer swapped for an injected virtual filesystem fed by the browser's folder
+handles. The INI parsing / cross-linking / unit-normalization / localization logic
+is byte-for-byte the original — correctness rides on the upstream parser, and its
+whole test suite was ported (see below).
+
+**Files (`src/lib/extractor/`, all pure except `browser.ts`):**
+- `ini.ts`, `units.ts`, `parsers/{ammunition,weapons,sensors,vessels}.ts`,
+  `names.ts`, `modconfig.ts` — vendored verbatim (schema imports retargeted to the
+  app's own `types.ts`, which is identical to the parser's `schema.ts`).
+- `vfs.ts` — `Vfs` interface + `MemVfs` (in-memory POSIX tree).
+- `sources.ts` — source enumeration / `indexCategory` / `mergeSections`, ported
+  from the parser's `sources.ts` with `node:fs`/`path` → `Vfs`.
+- `orchestrate.ts` — `extractPresets(vfs, opts)`, a pure port of the CLI `main()`
+  minus IO → `{ presets, warnings }`.
+- `browser.ts` — the only browser-coupled file: `showDirectoryPicker()` →
+  recursively read just the needed `.ini` subtrees (ammunition/, systems/,
+  vessels/, ships/, language_en/) into a `MemVfs`, then `extractPresets`. Probes
+  the pick for `steamapps/common/Sea Power` and `steamapps/workshop/content/1286220`,
+  so the user can pick their Steam **library**, `steamapps`, or the game folder.
+
+**Caveats (documented for users):** Chromium-desktop only. Mod **load order** lives
+in `usersettings.ini` under AppData (outside the pick), so the browser uses the
+parser's documented fallback — *all installed mods, sorted by id* (`loadOrder:
+null`). Picking the game folder alone (not the library) reaches no mods → base
+game only, with a warning.
+
+**Validation:** `src/lib/extractor/__tests__/` — the four upstream parser suites
+ported to Vitest (ini/parsers/names/modconfig, 46 tests) **plus** `extract.test.ts`
+(4 tests) running the full pipeline through `MemVfs` from an in-memory
+StreamingAssets tree (base + a mod override), checking discovery, cross-linking,
+last-writer-wins, and localization. Total suite now **119 tests**. The live
+File System Access path + Header wiring were verified in headless Chromium against
+a mock directory handle (DB re-seeded 617 → extracted set; Ticonderoga cross-linked
+to 4 channels; mod Pk override applied).
+
+---
+
 ## PRD deviations (decided with user — do not silently revert)
 
 The PRD had five internal inconsistencies that were resolved before coding;
@@ -260,6 +309,11 @@ src/
     db.ts               — Dexie.js IndexedDB schema (missiles, launchers, illuminators, ships, sources)
     vesselSync.ts       — converts game presets into DefenseLayer[] / missile lists / magazine size
     presetAdapter.ts    — pure preset→planner derivation (engagementsPerChannel, intercepts, leakers)
+    extractor/          — in-browser presets.json extraction (vendored parser + File System Access)
+      ini.ts, units.ts, parsers/*, names.ts, modconfig.ts — pure vendored parser logic
+      vfs.ts, sources.ts, orchestrate.ts — fs layer ported to an injected MemVfs
+      browser.ts        — showDirectoryPicker → read .ini subtree → extractPresets
+      __tests__/*       — ported parser suites + MemVfs end-to-end (50 tests)
     __tests__/calc.test.ts — Vitest suite (TC-01..55, 42 tests)
     __tests__/presetAdapter.test.ts — adapter validation vs fixtures/sample-presets.json
   components/
