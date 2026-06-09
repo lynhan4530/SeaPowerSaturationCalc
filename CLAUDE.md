@@ -66,6 +66,7 @@ for the full plan. The original six stages are **all shipped**:
 - **Envelope-Checking Fix** ✅ — see section below.
 - **Preset Input Locking + Tooltips** ✅ — see section below.
 - **Radar Horizon SAM Range Capping** ✅ — see section below.
+- **Preset Consuming Adapter (engagementsPerChannel derivation)** ✅ — see section below.
 
 ---
 
@@ -191,6 +192,43 @@ slow ones (e.g. 540 kt Harpoon) keep ≈full channels, which is physically corre
 
 ---
 
+### Preset Consuming Adapter (engagementsPerChannel derivation) ✅
+
+Implements the `presets.json` derivation documented in the `SeaPowerDataExtraction`
+repo (`INTEGRATION.md`, `SAMPLE_USAGE.md`). Full design note + reconciled doc
+mismatches in **`PRESET_ADAPTER.md`**.
+
+**Key file:** `src/lib/presetAdapter.ts` — **pure** (no React/DOM/Dexie). Implements:
+```
+flightTimeS           = (interceptRangeNm / samSpeedKnots) × 3600
+cycleS                = reloadTimeS ?? (60 / fireRatePerMin)
+timePerEngagementS    = flightTimeS + cycleS
+engagementsPerChannel = floor(raidWindowS / timePerEngagementS)   (≥ 1)
+totalIntercepts       = channels × engagementsPerChannel × pk
+leakers               = max(0, inbound − round(totalIntercepts))
+```
+`engagementsPerChannel` is **app-derived** (depends on the raid window, not game
+data). `weaponChannels` is read pre-computed (not re-summed), cross-checked vs the
+Targeting-director sum with a warning on mismatch; `DirectedSearch` directors
+(e.g. SPY-1A) are excluded from the headline. Null `killProbability` →
+guidance-family default (`defaultPkForGuidance`, never zero); unresolvable timing
+→ `engagementsPerChannel = 1`. Exposes `estimateShipSaturation()` as a
+geometry-aware standalone "quick check".
+
+**Wiring:** `vesselSync.ts` `buildDefenseLayersForShip` now derives each SAM's
+`engagementsPerChannel` from interceptor kinematics + the missile mount's launcher
+cycle (was hardcoded `1`), with `DEFAULT_RAID_WINDOW_S = 300`. **CIWS stays at 1**
+— its re-fire is modeled via the gun cadence/horizon `reach` in `calc.ts`; the
+~14 ms AK-630 cycle would otherwise produce thousands of spurious engagements.
+
+**Validation:** `src/lib/__tests__/presetAdapter.test.ts` (19 tests) checks each
+formula + the full Ticonderoga walkthrough (4 ch × 2 eng × 0.8 Pk = 6.4 kills, 6
+leakers of 12) against `fixtures/sample-presets.json`. The 50 existing calc tests
+are unchanged (they build scenarios directly), confirming the per-window sim is
+undisturbed.
+
+---
+
 ## PRD deviations (decided with user — do not silently revert)
 
 The PRD had five internal inconsistencies that were resolved before coding;
@@ -221,7 +259,9 @@ src/
     calc.ts             — solver, group sync, clustering, probabilistic defense sim, inverse solver
     db.ts               — Dexie.js IndexedDB schema (missiles, launchers, illuminators, ships, sources)
     vesselSync.ts       — converts game presets into DefenseLayer[] / missile lists / magazine size
+    presetAdapter.ts    — pure preset→planner derivation (engagementsPerChannel, intercepts, leakers)
     __tests__/calc.test.ts — Vitest suite (TC-01..55, 42 tests)
+    __tests__/presetAdapter.test.ts — adapter validation vs fixtures/sample-presets.json
   components/
     Header.tsx          — scenario tabs, import/export, Sync Game Data button
     LeftPanel.tsx       — friendly ships, target ships, VesselSelector, loadout dropdown

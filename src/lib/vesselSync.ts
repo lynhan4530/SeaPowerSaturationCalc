@@ -1,4 +1,9 @@
 import { db } from './db';
+import {
+  DEFAULT_RAID_WINDOW_S,
+  defaultPkForGuidance,
+  deriveEngagementsPerChannel,
+} from './presetAdapter';
 import type { ShipPreset, DefenseLayer, WeaponSystem, MissilePreset, GuidanceType } from '../types';
 
 export function getMagazineSizeForShip(ship: ShipPreset, loadoutName: string): number {
@@ -42,6 +47,11 @@ export async function buildDefenseLayersForShip(ship: ShipPreset, loadoutName: s
   const totalIlluminatorChannels = targetingDirectors.reduce((sum, d) => sum + (d.weaponChannels ?? 0), 0) || 2; // Default to 2 if none
 
   // 2. Map missile launchers
+  // The launcher feeding the missile mount supplies the reload/fire-rate cycle
+  // used to derive how many re-engagements a channel manages per raid window.
+  const missileMount = ship.mounts.find((m) => m.weaponType?.toLowerCase() === 'missile');
+  const samLauncher = missileMount ? await db.launchers.get(missileMount.launcherId) : undefined;
+
   const missileAmmo = loadout.ammo.filter((a) => a.isMissile);
   for (const entry of missileAmmo) {
     const missile = await db.missiles.get(entry.ammoId);
@@ -77,14 +87,24 @@ export async function buildDefenseLayersForShip(ship: ShipPreset, loadoutName: s
     }
 
     const maxRange = missile.maxRangeNm ?? 15;
-    const pk = missile.killProbability ?? 0.8;
+    const pk = missile.killProbability ?? defaultPkForGuidance(missile.guidance);
+
+    // Derive re-engagements/channel from interceptor kinematics + launcher cycle
+    // (preset-derived; depends on the assumed raid window — see presetAdapter).
+    // Long-flight area SAMs collapse to 1; fast/short-range missiles earn more.
+    const engagementsPerChannel = deriveEngagementsPerChannel({
+      raidWindowS: DEFAULT_RAID_WINDOW_S,
+      interceptRangeNm: maxRange,
+      samSpeedKnots: missile.speedKnots,
+      launcher: samLauncher,
+    });
 
     const sys: WeaponSystem = {
       id: crypto.randomUUID(),
       name: `${missile.name} (${guidance})`,
       guidance,
       channels,
-      engagementsPerChannel: 1, // Default re-engagement cap
+      engagementsPerChannel,
       pk,
       minRangeNm: missile.minRangeNm ?? undefined,
       maxRangeNm: missile.maxRangeNm ?? undefined,

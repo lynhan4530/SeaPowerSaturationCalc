@@ -1,0 +1,326 @@
+{
+  "generatedAt": "2026-06-09T12:00:00Z",
+  "gameVersion": "0.7.10",
+  "resolvedPaths": {
+    "gamePath": "D:\\SteamLibrary\\steamapps\\common\\Sea Power",
+    "modsPath": "D:\\SteamLibrary\\steamapps\\workshop\\content\\1286220"
+  },
+  "sources": [
+    {
+      "id": "base",
+      "kind": "base",
+      "name": "Base Game",
+      "deprecated": false,
+      "enabled": true,
+      "order": null
+    },
+    {
+      "id": "3499239964",
+      "kind": "mod",
+      "name": "E-7A Wedgetail",
+      "deprecated": false,
+      "enabled": true,
+      "order": 25
+    }
+  ],
+  "missiles": [
+    {
+      "id": "usn_rim-66c",
+      "name": "RIM-66C",
+      "nickname": "SM-2MR",
+      "category": "SAM/ASuW",
+      "role": "AAW",
+      "speedKnots": 600,
+      "maxRangeNm": 70,
+      "minRangeNm": 2,
+      "guidance": "SARH",
+      "seaSkimming": false,
+      "seaSkimmingAltFt": null,
+      "rcs": 0.2,
+      "seekerActiveRangeNm": 70,
+      "seekerPassiveRangeNm": 50,
+      "antiCountermeasuresBonus": 0.15,
+      "antiJammerBonus": 0.1,
+      "killProbability": 0.8,
+      "source": "base"
+    },
+    {
+      "id": "usn_aim-9x",
+      "name": "AIM-9X",
+      "nickname": "Sidewinder",
+      "category": "IR AAM",
+      "role": "AAW",
+      "speedKnots": 1300,
+      "maxRangeNm": 22,
+      "minRangeNm": 0.5,
+      "guidance": "IR",
+      "seaSkimming": false,
+      "seaSkimmingAltFt": null,
+      "rcs": 0.05,
+      "seekerActiveRangeNm": null,
+      "seekerPassiveRangeNm": 22,
+      "antiCountermeasuresBonus": 0.2,
+      "antiJammerBonus": null,
+      "killProbability": 0.85,
+      "source": "base"
+    },
+    {
+      "id": "usn_mk46",
+      "name": "MK 46",
+      "nickname": null,
+      "category": "ASW",
+      "role": "ASW",
+      "speedKnots": 45,
+      "maxRangeNm": 5.5,
+      "minRangeNm": 0.3,
+      "guidance": "ActiveSonar",
+      "seaSkimming": false,
+      "seaSkimmingAltFt": null,
+      "rcs": null,
+      "seekerActiveRangeNm": 5.5,
+      "seekerPassiveRangeNm": null,
+      "antiCountermeasuresBonus": null,
+      "antiJammerBonus": null,
+      "killProbability": null,
+      "source": "base"
+    }
+  ],
+  "launchers": [
+    {
+      "id": "MK13",
+      "name": "MK 13",
+      "kind": "VLS",
+      "reloadTimeS": 4.5,
+      "fireRatePerMin": 13.33,
+      "horizontalDegPerSec": 60,
+      "verticalDegPerSec": 40,
+      "missileInterceptChance": null,
+      "aircraftInterceptChance": null,
+      "source": "base"
+    },
+    {
+      "id": "AK630",
+      "name": "AK-630",
+      "kind": "CIWS",
+      "reloadTimeS": null,
+      "fireRatePerMin": 4200,
+      "horizontalDegPerSec": 140,
+      "verticalDegPerSec": 80,
+      "missileInterceptChance": 90,
+      "aircraftInterceptChance": 95,
+      "source": "base"
+    },
+    {
+      "id": "Harpoon",
+      "name": "Harpoon",
+      "kind": "SmallLauncher",
+      "reloadTimeS": 12,
+      "fireRatePerMin": 5,
+      "horizontalDegPerSec": 45,
+      "verticalDegPerSec": 30,
+      "missileInterceptChance": null,
+      "aircraftInterceptChance": null,
+      "source": "base"
+    }
+  ],
+  "illuminators": [
+    {
+      "id": "SPG-62",
+      "name": "SPG-62",
+      "kind": "Radar",
+      "type": "Targeting",
+      "mode": "Illuminate",
+      "weaponChannels": 2,
+      "targetChannels": 6,
+      "maxRangeKm": 90,
+      "maxRangeNm": 48.6,
+      "source": "base"
+    },
+    {
+      "id": "SPY-1A",
+      "name": "SPY-1A",
+      "kind": "Radar",
+      "type": "DirectedSearch",
+      "mode": "RadioCommand",
+      "weaponChannels": 24,
+      "targetChannels": 200,
+      "maxRangeKm": 370,
+      "maxRangeNm": 199.9,
+      "source": "base"
+    },
+    {
+      "id": "SQS-53",
+      "name": "SQS-53",
+      "kind": "Sonar",
+      "type": "Search",
+      "mode": "Passive",
+      "weaponChannels": null,
+      "targetChannels": 1,
+      "maxRangeKm": 100,
+      "maxRangeNm": 54,
+      "source": "base"
+    }
+  ],
+  "ships": [
+    {
+      "id": "usn_cg_ticonderoga",
+      "name": "Ticonderoga-class",
+      "nickname": "Ticonderoga",
+      "category": "Cruiser",
+      "source": "base",
+      "unitType": "Vessel",
+      "role": "AAW,ASW,ASuW",
+      "displacementTons": 9600,
+      "maxSpeedKnots": 32,
+      "weaponChannels": 4,
+      "directors": [
+        {
+          "sensorSystem": "SensorSystem5",
+          "illuminatorId": "SPG-62",
+          "resolved": true,
+          "type": "Targeting",
+          "mode": "Illuminate",
+          "weaponChannels": 2,
+          "maxRangeNm": 48.6
+        },
+        {
+          "sensorSystem": "SensorSystem5",
+          "illuminatorId": "SPG-62",
+          "resolved": true,
+          "type": "Targeting",
+          "mode": "Illuminate",
+          "weaponChannels": 2,
+          "maxRangeNm": 48.6
+        },
+        {
+          "sensorSystem": "SensorSystem1",
+          "illuminatorId": "SPY-1A",
+          "resolved": true,
+          "type": "DirectedSearch",
+          "mode": "RadioCommand",
+          "weaponChannels": 24,
+          "maxRangeNm": 199.9
+        }
+      ],
+      "mounts": [
+        {
+          "index": 1,
+          "weaponType": "Missile",
+          "launcherId": "MK13",
+          "resolved": true
+        },
+        {
+          "index": 2,
+          "weaponType": "CIWS",
+          "launcherId": "AK630",
+          "resolved": true
+        }
+      ],
+      "loadouts": [
+        {
+          "name": "Default",
+          "ammo": [
+            {
+              "ammoId": "usn_rim-66c",
+              "count": 32,
+              "isMissile": true
+            },
+            {
+              "ammoId": "usn_aim-9x",
+              "count": 8,
+              "isMissile": true
+            }
+          ]
+        },
+        {
+          "name": "Late",
+          "ammo": [
+            {
+              "ammoId": "usn_rim-66c",
+              "count": 40,
+              "isMissile": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "usn_dd_arleigh-burke",
+      "name": "Arleigh Burke-class",
+      "nickname": "Arleigh Burke",
+      "category": "Destroyer",
+      "source": "base",
+      "unitType": "Vessel",
+      "role": "AAW,ASW,ASuW",
+      "displacementTons": 8315,
+      "maxSpeedKnots": 30,
+      "weaponChannels": 2,
+      "directors": [
+        {
+          "sensorSystem": "SensorSystem3",
+          "illuminatorId": "SPG-62",
+          "resolved": true,
+          "type": "Targeting",
+          "mode": "Illuminate",
+          "weaponChannels": 2,
+          "maxRangeNm": 48.6
+        },
+        {
+          "sensorSystem": "SensorSystem1",
+          "illuminatorId": "SPY-1A",
+          "resolved": true,
+          "type": "DirectedSearch",
+          "mode": "RadioCommand",
+          "weaponChannels": 24,
+          "maxRangeNm": 199.9
+        }
+      ],
+      "mounts": [
+        {
+          "index": 1,
+          "weaponType": "Missile",
+          "launcherId": "MK13",
+          "resolved": true
+        },
+        {
+          "index": 2,
+          "weaponType": "CIWS",
+          "launcherId": "AK630",
+          "resolved": true
+        }
+      ],
+      "loadouts": [
+        {
+          "name": "Default",
+          "ammo": [
+            {
+              "ammoId": "usn_rim-66c",
+              "count": 32,
+              "isMissile": true
+            },
+            {
+              "ammoId": "usn_mk46",
+              "count": 24,
+              "isMissile": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "stats": {
+    "totalMissiles": 3,
+    "totalLaunchers": 3,
+    "totalIlluminators": 3,
+    "totalShips": 2,
+    "sourcesEnabled": 2,
+    "loadOrderApplied": 1,
+    "mountsResolved": 2,
+    "mountsUnresolved": 0,
+    "directorsResolved": 4,
+    "directorsUnresolved": 0,
+    "collisionsAmmo": 0,
+    "collisionsWeapons": 0,
+    "collisionsSensors": 0
+  }
+}
