@@ -68,6 +68,7 @@ for the full plan. The original six stages are **all shipped**:
 - **Radar Horizon SAM Range Capping** ✅ — see section below.
 - **Preset Consuming Adapter (engagementsPerChannel derivation)** ✅ — see section below.
 - **In-Browser Game-Data Extraction (File System Access)** ✅ — see section below.
+- **Tactical Plot (target-anchored PPI view)** ✅ — see section below.
 
 ---
 
@@ -278,11 +279,50 @@ to 4 channels; mod Pk override applied).
 
 ---
 
+### Tactical Plot (target-anchored PPI view) ✅
+
+User-requested reversal of the PRD's "No map rendering" rule (deviation #7).
+**Still no real lat/lon** — the plot is built entirely from the existing relative
+geometry (salvo range/bearing + target heading/speed), rendered as a radar-scope
+(PPI) view, one per target.
+
+**Key file:** `src/components/TacticalPlot.tsx`, mounted in `RightPanel` between
+Results and Timeline. Targets with no salvos still get a plot (defense envelope
+alone).
+
+**Frame:** target at origin, north-up. Each salvo places its firing ship at the
+reciprocal bearing (`bearingToTargetDeg + 180`) at `rangeToTargetNm`. Reposition
+legs reuse the solver output: firing point = ship position + `ship.speedKnots ×
+repositionTimeS / 3600` along `optimalHeadingDeg` (amber dashed leg + hollow
+square). The synchronized impact point is the target's own position at
+`synchronizedArrivalTimeS` projected along its heading (red X + dashed leader);
+missile flight paths are dotted sky lines from firing point to impact.
+
+**Rendered layers:** 45° bearing spokes (`000`–`315`), auto-stepped range rings
+(`niceStep`, ~4 rings), radar-horizon rings (`radarHorizonNm(scenario.radarHeightFt,
+alt)` per distinct sea-skimmer altitude among plotted salvos), defense envelope
+rings (one dashed circle per weapon system `maxRangeNm`, deduped by
+guidance+radius, colored SARH amber / ARH sky / gun red), hostile diamond +
+6-minute velocity leader, friendly circles in `SHIP_PALETTE` ship colors.
+Non-converged solutions render at reduced opacity with the ⚠ tooltip banner
+(same pattern as Timeline).
+
+**Interactions:** wheel zoom about the cursor, drag pan, hover tooltips (LOS
+range/bearing, reposition heading/duration, firing range, fire/impact times with
+H-hour support). Zoom/pan implementation mirrors `Timeline.tsx`.
+
+No new solver code — the component is a pure consumer of `solveGroup` and
+`geo.ts`; the test suite is unchanged (119). Verified end-to-end in headless
+Chromium (Slava → Ticonderoga: rings, horizon, reposition leg, impact marker,
+zoom/pan/tooltips).
+
+---
+
 ## PRD deviations (decided with user — do not silently revert)
 
 The PRD had five internal inconsistencies that were resolved before coding;
-deviation #6 (radar horizon) was added post-launch. **These take precedence over
-PRD wording.**
+deviations #6 (radar horizon) and #7 (tactical plot) were added post-launch.
+**These take precedence over PRD wording.**
 
 | # | Topic | Rule |
 |---|---|---|
@@ -292,6 +332,7 @@ PRD wording.**
 | 4 | Defense-layer window timing | **Sliding window from first arrival in each layer.** First arrival opens window 0; arrivals within `windowS` of it stay in window 0; first outside opens window 1. |
 | 5 | Defense-layer envelope check | **At launch range, not arrival range.** A weapon system engages iff `salvo.rangeToTargetNm >= ws.minRangeNm`. This replaced the original "check at range ≈ 0" rule which broke all SAMs with a positive minimum range. Post-Phase 2 this check is **per shot** inside `simulateDefense()`. |
 | 6 | Radar horizon cap | **Time-based effectiveness.** Detection capped at `horizon = 1.23×(√H_radar + √H_missile)`; each system's shots scale by `reach = clamp01(usableDepth / (closingSpeed × eng × cadence / 3600))`. `null` attacker altitude ⇒ `reach = 1` ⇒ legacy. Bites hard on fast sea-skimmers, lightly on slow ones. Radar height is the scenario-level `radarHeightFt` (default 50). See the section above. |
+| 7 | Map rendering | **Tactical Plot built** (user decision, 2026-06-12), overriding the PRD's "No map rendering". It is a **target-anchored relative PPI view** (`TacticalPlot.tsx`) — the "no real lat/lon coordinates" rule still holds; everything is derived from salvo range/bearing and target heading/speed. See the section above. |
 
 ## File structure
 
@@ -324,6 +365,7 @@ src/
     DefenseLayerEditor.tsx — weapon system editor, drag reorder, preset locking
     MissileLibrary.tsx  — modal for managing missile library
     ResultsPanel.tsx    — per-target solution blocks, saturation, inverse solver card
+    TacticalPlot.tsx    — target-anchored PPI plot (rings, envelopes, reposition legs)
     Timeline.tsx        — read-only swimlane renderer with zoom/pan
 public/
   presets.json          — game data extracted by SeaPowerDataExtraction
@@ -348,9 +390,10 @@ public/
 
 ## What NOT to add
 
-The PRD's "What NOT to Build" list is binding. No map rendering, no real lat/lon,
-no multiplayer, no backend, no auth, no animation on timeline bars, no mobile
-layout. Drag-to-reorder is **only** for defense layers in Stage 2.
+The PRD's "What NOT to Build" list is binding **except where a numbered deviation
+says otherwise** (deviation #7 added the relative-coordinates Tactical Plot). No
+real lat/lon, no multiplayer, no backend, no auth, no animation on timeline bars,
+no mobile layout. Drag-to-reorder is **only** for defense layers in Stage 2.
 
 ## Future considerations
 
