@@ -16,6 +16,12 @@ import type {
 const PLOT_HEIGHT = 420;
 const EDGE_PAD = 36;
 
+// Friendly-marker label callout geometry. Each label is a two-line block
+// (ship name + missile ×count); de-confliction keeps blocks LABEL_BLOCK_H apart.
+const LABEL_BLOCK_H = 22;
+const LABEL_OFFSET = 11;
+const LABEL_PAD_Y = 8;
+
 const GUIDANCE_COLORS: Record<GuidanceType, string> = {
   SARH: '#F59E0B',
   ARH: '#38BDF8',
@@ -389,6 +395,43 @@ function TargetPlot({
       ? polarToVec(target.speedKnots / 10, target.headingDeg)
       : null;
 
+  // Label de-confliction. Markers stay at their true geometry, but their text
+  // callouts are stacked into non-overlapping columns (one per side of the
+  // target) and joined to the marker with a leader line — so multiple ships on
+  // the same bearing (markers along one radial) no longer pile their labels.
+  const labelLayout = new Map<
+    string,
+    { mx: number; my: number; lx: number; ly: number; anchor: 'start' | 'end' }
+  >();
+  {
+    const centerX = sx(center);
+    const markers = tracks.map((t) => ({ id: t.salvo.id, x: sx(t.pos), y: sy(t.pos) }));
+    for (const side of ['R', 'L'] as const) {
+      const col = markers
+        .filter((m) => (side === 'R' ? m.x >= centerX : m.x < centerX))
+        .sort((a, b) => a.y - b.y);
+      // Greedy top-down spread, then shift the whole column up if it overflows.
+      let prev = -Infinity;
+      const placed = col.map((m) => {
+        const ly = Math.max(m.y, prev + LABEL_BLOCK_H);
+        prev = ly;
+        return { id: m.id, mx: m.x, my: m.y, ly };
+      });
+      const overflow =
+        placed.length > 0 ? placed[placed.length - 1].ly - (PLOT_HEIGHT - LABEL_PAD_Y) : 0;
+      const shift = Math.max(0, overflow);
+      for (const p of placed) {
+        labelLayout.set(p.id, {
+          mx: p.mx,
+          my: p.my,
+          lx: side === 'R' ? p.mx + LABEL_OFFSET : p.mx - LABEL_OFFSET,
+          ly: Math.max(LABEL_PAD_Y + LABEL_BLOCK_H / 2, p.ly - shift),
+          anchor: side === 'R' ? 'start' : 'end',
+        });
+      }
+    }
+  }
+
   return (
     <section className="rounded border border-panelBorder bg-panel">
       <div className="border-b border-panelBorder px-3 py-2">
@@ -653,11 +696,36 @@ function TargetPlot({
             </text>
           </g>
 
-          {/* Friendly markers (one per salvo) */}
+          {/* Friendly markers (one per salvo) with de-conflicted label callouts */}
           {tracks.map((t) => {
             const opacity = t.result && !t.result.converged ? 0.45 : 1;
+            const lay = labelLayout.get(t.salvo.id);
+            const nameTxt = truncate(t.ship.name, 16);
+            const ammoTxt = `${truncate(t.missile.name, 12)} ×${t.salvo.count}`;
+            // Estimate callout width from the longer line (name ~6px/char @10px,
+            // ammo ~4.8px/char @8px mono) for the backing rect.
+            const blockW = Math.max(nameTxt.length * 6, ammoTxt.length * 4.9) + 8;
+            const lx = lay?.lx ?? sx(t.pos) + LABEL_OFFSET;
+            const ly = lay?.ly ?? sy(t.pos);
+            const anchor = lay?.anchor ?? 'start';
+            const rectX = anchor === 'start' ? lx - 3 : lx - blockW + 3;
+            // Leader joins the marker edge to the vertical middle of the callout.
+            const leaderMoved =
+              lay && (Math.abs(lay.ly - lay.my) > 1 || Math.abs(lx - lay.mx) > LABEL_OFFSET + 1);
             return (
               <g key={`mk-${t.salvo.id}`} opacity={opacity}>
+                {leaderMoved && (
+                  <line
+                    x1={sx(t.pos)}
+                    y1={sy(t.pos)}
+                    x2={lx}
+                    y2={ly}
+                    stroke={t.color}
+                    strokeWidth={0.8}
+                    opacity={0.5}
+                    pointerEvents="none"
+                  />
+                )}
                 <circle
                   cx={sx(t.pos)}
                   cy={sy(t.pos)}
@@ -667,24 +735,36 @@ function TargetPlot({
                   strokeWidth={2}
                   filter={`url(#${glowId})`}
                 />
+                <rect
+                  x={rectX}
+                  y={ly - 11}
+                  width={blockW}
+                  height={21}
+                  rx={2}
+                  fill="#070C14"
+                  opacity={0.62}
+                  pointerEvents="none"
+                />
                 <text
-                  x={sx(t.pos) + 9}
-                  y={sy(t.pos) - 7}
+                  x={lx}
+                  y={ly - 1}
+                  textAnchor={anchor}
                   fontSize={10}
                   fill="#E6EDF7"
                   pointerEvents="none"
                 >
-                  {truncate(t.ship.name, 16)}
+                  {nameTxt}
                 </text>
                 <text
-                  x={sx(t.pos) + 9}
-                  y={sy(t.pos) + 4}
+                  x={lx}
+                  y={ly + 8}
+                  textAnchor={anchor}
                   fontSize={8}
                   fontFamily="'JetBrains Mono', ui-monospace, monospace"
                   fill={COLOR_LABEL}
                   pointerEvents="none"
                 >
-                  {`${truncate(t.missile.name, 12)} ×${t.salvo.count}`}
+                  {ammoTxt}
                 </text>
                 {/* Oversized invisible hit area for the tooltip */}
                 <circle
