@@ -5,6 +5,7 @@ import { CompassInput } from './CompassInput';
 import { DefenseLayerEditor } from './DefenseLayerEditor';
 import { db } from '../lib/db';
 import { getMagazineSizeForShip, getMissilesForShip, buildDefenseLayersForShip } from '../lib/vesselSync';
+import { buildDisplayNames } from '../lib/format';
 
 export function LeftPanel() {
   const { state, dispatch, activeScenario } = useScenario();
@@ -391,6 +392,9 @@ function SalvoRow({
   const update = (patch: Partial<Salvo>) =>
     dispatch({ type: 'UPDATE_SALVO', scenarioId, shipId, salvoId: salvo.id, patch });
 
+  // Disambiguate same-class targets (e.g. two "Ticonderoga-class") in the dropdown.
+  const targetNames = buildDisplayNames(targets);
+
   useEffect(() => {
     // If the selected missileId is invalid or absent, auto-select the first compatible one
     if (missiles.length > 0 && !missiles.some((m) => m.id === salvo.missileId)) {
@@ -432,7 +436,7 @@ function SalvoRow({
             {targets.length === 0 && <option value="">—</option>}
             {targets.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name}
+                {targetNames.get(t.id) ?? t.name}
               </option>
             ))}
           </select>

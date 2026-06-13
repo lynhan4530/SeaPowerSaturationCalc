@@ -3,7 +3,14 @@ import { useScenario } from '../hooks/useScenario';
 import { useDbLoader } from '../hooks/useDbLoader';
 import { solveGroup, type GroupResult, type InterceptResult } from '../lib/calc';
 import { radarHorizonNm } from '../lib/geo';
-import { SHIP_PALETTE, formatDuration, formatTime, pad3, parseHHMMSS } from '../lib/format';
+import {
+  SHIP_PALETTE,
+  buildDisplayNames,
+  formatDuration,
+  formatTime,
+  pad3,
+  parseHHMMSS,
+} from '../lib/format';
 import type {
   FriendlyShip,
   GuidanceType,
@@ -75,6 +82,9 @@ export function TacticalPlot() {
       SHIP_PALETTE[i % SHIP_PALETTE.length],
     ]),
   );
+  // Disambiguate same-class names (e.g. two "Slava-class" / two "Ticonderoga-class").
+  const shipNameById = buildDisplayNames(activeScenario.friendlyShips);
+  const targetNameById = buildDisplayNames(activeScenario.targetShips);
 
   return (
     <div className="space-y-4 p-4">
@@ -94,11 +104,13 @@ export function TacticalPlot() {
           <TargetPlot
             key={target.id}
             target={target}
+            displayName={targetNameById.get(target.id) ?? target.name}
             ships={activeScenario.friendlyShips}
             missiles={allMissiles}
             scenario={activeScenario}
             hHourBase={hHourBase}
             shipColorById={shipColorById}
+            shipNameById={shipNameById}
           />
         ))
       )}
@@ -155,22 +167,27 @@ type Tooltip = { x: number; y: number; lines: string[]; warn: boolean };
 
 type TargetPlotProps = {
   target: TargetShip;
+  displayName: string;
   ships: FriendlyShip[];
   missiles: Missile[];
   scenario: Scenario;
   hHourBase: number | null;
   shipColorById: Map<string, string>;
+  shipNameById: Map<string, string>;
 };
 
 function TargetPlot({
   target,
+  displayName,
   ships,
   missiles,
   scenario,
   hHourBase,
   shipColorById,
+  shipNameById,
 }: TargetPlotProps) {
   const missileById = useMemo(() => new Map(missiles.map((m) => [m.id, m])), [missiles]);
+  const shipName = (id: string, fallback: string): string => shipNameById.get(id) ?? fallback;
 
   const salvos = useMemo(
     () =>
@@ -350,7 +367,7 @@ function TargetPlot({
     evt: React.MouseEvent<SVGCircleElement>,
   ): void => {
     const lines: string[] = [
-      `${t.ship.name} — ${t.missile.name} ×${t.salvo.count}`,
+      `${shipName(t.ship.id, t.ship.name)} — ${t.missile.name} ×${t.salvo.count}`,
       `LOS ${t.salvo.rangeToTargetNm.toFixed(1)} nm, brg ${pad3(Math.round(t.salvo.bearingToTargetDeg))}° to target`,
     ];
     if (t.result) {
@@ -375,7 +392,7 @@ function TargetPlot({
   const showTargetTooltip = (evt: React.MouseEvent<SVGGElement>): void => {
     const systems = target.defenseLayers.flatMap((l) => l.weaponSystems);
     const lines: string[] = [
-      target.name,
+      displayName,
       `Hdg ${pad3(Math.round(target.headingDeg))}° at ${target.speedKnots.toFixed(1)} kts`,
       `${target.defenseLayers.length} defense layer${target.defenseLayers.length === 1 ? '' : 's'}, ${systems.length} weapon system${systems.length === 1 ? '' : 's'}`,
     ];
@@ -436,7 +453,7 @@ function TargetPlot({
     <section className="rounded border border-panelBorder bg-panel">
       <div className="border-b border-panelBorder px-3 py-2">
         <h3 className="text-sm font-bold uppercase tracking-wide text-textPrimary">
-          {target.name}
+          {displayName}
         </h3>
         <p className="font-mono text-xs text-textSecondary">
           {tracks.length} salvo{tracks.length === 1 ? '' : 's'} inbound · ring spacing {formatNm(ringStep)} nm
@@ -692,7 +709,7 @@ function TargetPlot({
               fill="#E6EDF7"
               pointerEvents="none"
             >
-              {truncate(target.name, 18)}
+              {truncate(displayName, 18)}
             </text>
           </g>
 
@@ -700,7 +717,7 @@ function TargetPlot({
           {tracks.map((t) => {
             const opacity = t.result && !t.result.converged ? 0.45 : 1;
             const lay = labelLayout.get(t.salvo.id);
-            const nameTxt = truncate(t.ship.name, 16);
+            const nameTxt = truncate(shipName(t.ship.id, t.ship.name), 16);
             const ammoTxt = `${truncate(t.missile.name, 12)} ×${t.salvo.count}`;
             // Estimate callout width from the longer line (name ~6px/char @10px,
             // ammo ~4.8px/char @8px mono) for the backing rect.

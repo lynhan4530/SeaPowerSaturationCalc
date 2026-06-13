@@ -387,6 +387,11 @@ public/
 - Custom Tailwind colors: `navy`, `panel`, `panelBorder`, `textPrimary`, `textSecondary`, `amberAccent`, `redAccent`, `greenAccent`. Use those instead of raw hex.
 - Preset-linked ships disable auto-populated inputs; users must "Clear Link" to unlock manual editing.
 - All input labels have descriptive `title` tooltips with `cursor-help` styling.
+- Duplicate ship/target class names (e.g. two preset-linked "Ticonderoga-class")
+  are disambiguated at **display time** via `buildDisplayNames()` in `format.ts`
+  — colliding names get a ` #N` suffix in list order; the stored `name` is
+  untouched. Applied in the salvo Target dropdown, Results, Tactical Plot, and
+  Timeline (headers, markers, tooltips, tables).
 
 ## What NOT to add
 
