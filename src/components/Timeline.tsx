@@ -4,6 +4,7 @@ import { useDbLoader } from '../hooks/useDbLoader';
 import { solveGroup, type GroupResult, type InterceptResult } from '../lib/calc';
 import {
   SHIP_PALETTE,
+  buildDisplayNames,
   formatClock,
   formatDuration,
   formatTime,
@@ -53,6 +54,9 @@ export function Timeline() {
       SHIP_PALETTE[i % SHIP_PALETTE.length],
     ]),
   );
+  // Disambiguate same-class names (e.g. two "Ticonderoga-class").
+  const shipNameById = buildDisplayNames(activeScenario.friendlyShips);
+  const targetNameById = buildDisplayNames(activeScenario.targetShips);
 
   const targetsWithSalvos = activeScenario.targetShips.filter((t) =>
     activeScenario.friendlyShips.some((sh) =>
@@ -82,11 +86,13 @@ export function Timeline() {
           <TargetTimeline
             key={target.id}
             target={target}
+            displayName={targetNameById.get(target.id) ?? target.name}
             ships={activeScenario.friendlyShips}
             missiles={allMissiles}
             scenario={activeScenario}
             hHourBase={hHourBase}
             shipColorById={shipColorById}
+            shipNameById={shipNameById}
           />
         ))
       )}
@@ -120,22 +126,26 @@ function Legend() {
 
 type TargetTimelineProps = {
   target: TargetShip;
+  displayName: string;
   ships: FriendlyShip[];
   missiles: Missile[];
   scenario: Scenario;
   hHourBase: number | null;
   shipColorById: Map<string, string>;
+  shipNameById: Map<string, string>;
 };
 
 type Tooltip = { x: number; y: number; lines: string[]; warn: boolean };
 
 function TargetTimeline({
   target,
+  displayName,
   ships,
   missiles,
   scenario,
   hHourBase,
   shipColorById,
+  shipNameById,
 }: TargetTimelineProps) {
   const missileById = useMemo(() => new Map(missiles.map((m) => [m.id, m])), [missiles]);
   const shipBySalvoId = useMemo(() => {
@@ -245,8 +255,9 @@ function TargetTimeline({
     const ship = shipBySalvoId.get(r.salvoId);
     const salvo = salvos.find((s) => s.id === r.salvoId);
     const missile = salvo ? missileById.get(salvo.missileId) : undefined;
+    const shipLabel = ship ? shipNameById.get(ship.id) ?? ship.name : 'Ship';
     const lines: string[] = [
-      `${ship?.name ?? 'Ship'}${missile ? ` — ${missile.name}` : ''}${
+      `${shipLabel}${missile ? ` — ${missile.name}` : ''}${
         salvo?.count ? ` ×${salvo.count}` : ''
       }`,
     ];
@@ -270,7 +281,7 @@ function TargetTimeline({
     <section className="rounded border border-panelBorder bg-panel">
       <div className="border-b border-panelBorder px-3 py-2">
         <h3 className="text-sm font-bold uppercase tracking-wide text-textPrimary">
-          {target.name}
+          {displayName}
         </h3>
         <p className="font-mono text-xs text-textSecondary">
           Sync arrival {formatTime(sync, hHourBase)} · ±{tolS}s tolerance
@@ -457,7 +468,7 @@ function TargetTimeline({
                   fontSize={11}
                   fill="#E6EDF7"
                 >
-                  {truncate(ship?.name ?? 'Ship', 18)}
+                  {truncate(ship ? shipNameById.get(ship.id) ?? ship.name : 'Ship', 18)}
                 </text>
                 {/* Segments (chronological: reposition → wait → flight) */}
                 {seg(0, repoEnd, `url(#${repoGradId})`, 'repo', 'REPOSITION', TEXT_ON_REPOSITION)}

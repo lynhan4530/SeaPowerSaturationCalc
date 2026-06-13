@@ -39,6 +39,31 @@ export function formatTime(seconds: number, hHourBase: number | null): string {
   return hHourBase === null ? base : `${base} (${formatClock(hHourBase, seconds)})`;
 }
 
+/**
+ * Map each item's id to a display name that disambiguates duplicates. When a
+ * name is shared by 2+ items (e.g. two preset-linked "Ticonderoga-class"
+ * targets) each gets a " #N" suffix in list order; unique names pass through
+ * unchanged. Order-stable so labels don't shuffle between renders.
+ */
+export function buildDisplayNames<T extends { id: string; name: string }>(
+  items: T[],
+): Map<string, string> {
+  const total = new Map<string, number>();
+  for (const it of items) total.set(it.name, (total.get(it.name) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  const out = new Map<string, string>();
+  for (const it of items) {
+    if ((total.get(it.name) ?? 0) > 1) {
+      const n = (seen.get(it.name) ?? 0) + 1;
+      seen.set(it.name, n);
+      out.set(it.id, `${it.name} #${n}`);
+    } else {
+      out.set(it.id, it.name);
+    }
+  }
+  return out;
+}
+
 /** Human duration for reposition/wait phases, e.g. "53min" or "1h 7min". */
 export function formatDuration(seconds: number): string {
   const totalMin = Math.round(seconds / 60);

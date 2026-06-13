@@ -12,6 +12,7 @@ import {
 } from '../lib/calc';
 import {
   SHIP_PALETTE,
+  buildDisplayNames,
   formatDuration,
   formatTime,
   pad3,
@@ -80,6 +81,9 @@ export function ResultsPanel() {
   const shipColorById = new Map<string, string>(
     activeScenario.friendlyShips.map((s, i) => [s.id, SHIP_PALETTE[i % SHIP_PALETTE.length]]),
   );
+  // Disambiguate same-class names (e.g. two "Ticonderoga-class").
+  const shipNameById = buildDisplayNames(activeScenario.friendlyShips);
+  const targetNameById = buildDisplayNames(activeScenario.targetShips);
 
   return (
     <div className="space-y-4 p-4">
@@ -164,11 +168,13 @@ export function ResultsPanel() {
           <TargetResultSection
             key={target.id}
             target={target}
+            displayName={targetNameById.get(target.id) ?? target.name}
             ships={activeScenario.friendlyShips}
             missiles={allMissiles}
             scenario={activeScenario}
             hHourBase={hHourBase}
             shipColorById={shipColorById}
+            shipNameById={shipNameById}
           />
         ))
       )}
@@ -178,20 +184,24 @@ export function ResultsPanel() {
 
 type SectionProps = {
   target: TargetShip;
+  displayName: string;
   ships: FriendlyShip[];
   missiles: Missile[];
   scenario: Scenario;
   hHourBase: number | null;
   shipColorById: Map<string, string>;
+  shipNameById: Map<string, string>;
 };
 
 function TargetResultSection({
   target,
+  displayName,
   ships,
   missiles,
   scenario,
   hHourBase,
   shipColorById,
+  shipNameById,
 }: SectionProps) {
   const [showSaturation, setShowSaturation] = useState(false);
 
@@ -248,7 +258,7 @@ function TargetResultSection({
     <section className="rounded border border-panelBorder bg-panel">
       <div className="border-b border-panelBorder px-3 py-2">
         <h3 className="text-sm font-bold uppercase tracking-wide text-textPrimary">
-          {target.name}
+          {displayName}
         </h3>
         <p className="font-mono text-xs text-textSecondary">
           {target.speedKnots.toFixed(1)} kts, heading {pad3(target.headingDeg)}&deg; &middot;{' '}
@@ -271,7 +281,10 @@ function TargetResultSection({
             <SolutionBlock
               key={r.salvoId}
               result={r}
-              ship={shipBySalvoId.get(r.salvoId)}
+              shipLabel={(() => {
+                const s = shipBySalvoId.get(r.salvoId);
+                return s ? shipNameById.get(s.id) ?? s.name : 'Unknown ship';
+              })()}
               missile={missileBySalvo(r, salvos, missileById)}
               count={countBySalvo(r, salvos)}
               scenario={scenario}
@@ -282,6 +295,7 @@ function TargetResultSection({
           <ArrivalTable
             group={group}
             shipBySalvoId={shipBySalvoId}
+            shipNameById={shipNameById}
             salvos={salvos}
             missileById={missileById}
             toleranceS={scenario.simultaneityToleranceS}
@@ -400,7 +414,7 @@ function SaturationThresholdCard({
 
 type SolutionBlockProps = {
   result: InterceptResult;
-  ship: FriendlyShip | undefined;
+  shipLabel: string;
   missile: Missile | undefined;
   count: number;
   scenario: Scenario;
@@ -409,7 +423,7 @@ type SolutionBlockProps = {
 
 function SolutionBlock({
   result: r,
-  ship,
+  shipLabel,
   missile,
   count,
   scenario,
@@ -434,7 +448,7 @@ function SolutionBlock({
     >
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-medium text-textPrimary">
-          {ship?.name ?? 'Unknown ship'}
+          {shipLabel}
           {missile ? ` — ${missile.name}` : ''}
           {count ? ` ×${count}` : ''}
         </span>
@@ -460,6 +474,7 @@ function SolutionBlock({
 type ArrivalTableProps = {
   group: GroupResult;
   shipBySalvoId: Map<string, FriendlyShip>;
+  shipNameById: Map<string, string>;
   salvos: SectionProps['ships'][number]['salvos'];
   missileById: Map<string, Missile>;
   toleranceS: number;
@@ -469,6 +484,7 @@ type ArrivalTableProps = {
 function ArrivalTable({
   group,
   shipBySalvoId,
+  shipNameById,
   salvos,
   missileById,
   toleranceS,
@@ -498,7 +514,12 @@ function ArrivalTable({
               delta === 0 ? '0s' : `${delta > 0 ? '+' : '−'}${Math.abs(delta)}s`;
             return (
               <tr key={r.salvoId} className="text-textPrimary odd:bg-surfaceAlt/20">
-                <td className="px-2 py-1">{shipBySalvoId.get(r.salvoId)?.name ?? '—'}</td>
+                <td className="px-2 py-1">
+                  {(() => {
+                    const s = shipBySalvoId.get(r.salvoId);
+                    return s ? shipNameById.get(s.id) ?? s.name : '—';
+                  })()}
+                </td>
                 <td className="px-2 py-1">{missile?.name ?? '—'}</td>
                 <td className="px-2 py-1 text-right font-mono">{salvo?.count ?? 0}</td>
                 <td className="px-2 py-1 text-right font-mono">{Math.round(r.waitTimeS)}s</td>
