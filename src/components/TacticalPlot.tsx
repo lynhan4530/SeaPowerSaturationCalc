@@ -296,6 +296,7 @@ function TargetPlot({
 
   // Measure available width.
   const wrapRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {
     const el = wrapRef.current;
@@ -332,9 +333,17 @@ function TargetPlot({
   }
   const outerNm = ringRadii.length > 0 ? ringRadii[ringRadii.length - 1] : fitRadius;
 
-  const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+  // Wheel-zoom. Bound as a NON-passive native listener (below) so that
+  // preventDefault() actually stops the page from scrolling — React's onWheel is
+  // registered passively in React 18, which silently ignores preventDefault().
+  // The ref always holds the latest closure (fresh pan/zoom) while the listener
+  // itself is bound once.
+  const wheelRef = useRef<(e: WheelEvent) => void>(() => {});
+  wheelRef.current = (e: WheelEvent) => {
     e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
+    const el = svgRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     // Screen-space nm under the cursor (uy positive = south; consistent both sides).
@@ -345,6 +354,13 @@ function TargetPlot({
     setZoom(next);
     setPan({ x: mx - cx - ux * next, y: my - cy - uy * next });
   };
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => wheelRef.current(e);
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, []);
 
   const onBgPointerDown = (e: React.PointerEvent<SVGRectElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -462,9 +478,9 @@ function TargetPlot({
       </div>
       <div ref={wrapRef} className="relative">
         <svg
+          ref={svgRef}
           width={plotWidth}
           height={PLOT_HEIGHT}
-          onWheel={onWheel}
           className="block select-none"
           style={{ touchAction: 'none' }}
         >

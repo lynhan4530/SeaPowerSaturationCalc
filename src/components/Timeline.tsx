@@ -169,6 +169,7 @@ function TargetTimeline({
 
   // Measure available width.
   const wrapRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {
     const el = wrapRef.current;
@@ -190,6 +191,19 @@ function TargetTimeline({
   const repoGradId = `repo-${uid}`;
   const flightGradId = `flight-${uid}`;
   const glowId = `glow-${uid}`;
+
+  // Wheel-zoom bound as a NON-passive native listener so preventDefault() stops
+  // the page scrolling (React's onWheel is passive in React 18). The ref holds
+  // the latest closure; the listener is bound once. Hooks live above the early
+  // return; the closure that needs computed values is assigned below it.
+  const wheelRef = useRef<(e: WheelEvent) => void>(() => {});
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => wheelRef.current(e);
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, []);
 
   if (!group) return null;
 
@@ -218,9 +232,12 @@ function TargetTimeline({
     ticks.push(t);
   }
 
-  const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+  // Latest wheel-zoom closure (uses computed pan/pxPerS/etc.); bound above.
+  wheelRef.current = (e: WheelEvent) => {
     e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
+    const el = svgRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const tAtCursor = pan + (mouseX - LEFT_GUTTER) / pxPerS;
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
@@ -289,9 +306,9 @@ function TargetTimeline({
       </div>
       <div ref={wrapRef} className="relative">
         <svg
+          ref={svgRef}
           width={plotWidth}
           height={height}
-          onWheel={onWheel}
           className="block select-none"
           style={{ touchAction: 'none' }}
         >
